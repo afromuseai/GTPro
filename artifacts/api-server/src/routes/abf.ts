@@ -4,8 +4,8 @@ import OpenAI from "openai";
 const router = Router();
 
 const openai = new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  apiKey:  process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? "dummy",
+  baseURL: "https://integrate.api.nvidia.com/v1",
+  apiKey:  process.env.NVIDIA_API_KEY ?? "dummy",
 });
 
 interface LiquidityZoneInfo {
@@ -169,9 +169,9 @@ Respond ONLY with valid JSON matching this exact schema:
 {"signal":"BUY"|"SELL"|"HOLD","confidence":number,"reasoning":"string","strategy":"string"}`;
 
   try {
-    // Use gpt-5.4 with streaming — collect all chunks then parse JSON
+    // Use NVIDIA Llama-3.1-Nemotron-70B via OpenRouter — collect all chunks then parse JSON
     const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "nvidia/llama-3.1-nemotron-70b-instruct",
       max_tokens: 300,
       messages: [
         { role: "system", content: "You are a professional trading AI. Respond ONLY with valid JSON, no markdown, no explanation, no code blocks." },

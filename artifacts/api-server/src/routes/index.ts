@@ -1,16 +1,17 @@
 import { Router, type IRouter } from "express";
-import healthRouter    from "./health";
-import dashboardRouter from "./dashboard";
-import userRouter      from "./user";
-import abfRouter       from "./abf";
-import chatRouter      from "./chat";
-import marketRouter    from "./market";
-import exchangeRouter  from "./exchange";
-import adminRouter     from "./admin";
-import billingRouter   from "./billing";
-import auth2faRouter   from "./auth-2fa";
+import healthRouter        from "./health";
+import dashboardRouter     from "./dashboard";
+import userRouter          from "./user";
+import abfRouter           from "./abf";
+import chatRouter          from "./chat";
+import marketRouter        from "./market";
+import exchangeRouter      from "./exchange";
+import adminRouter         from "./admin";
+import billingRouter       from "./billing";
+import auth2faRouter       from "./auth-2fa";
 import fleetRouter, { fleetMiddleware } from "./fleet";
-import journalRouter   from "./journal";
+import journalRouter       from "./journal";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -29,5 +30,6 @@ router.use(billingRouter);
 router.use(auth2faRouter);
 router.use(fleetRouter);
 router.use(journalRouter);
+router.use(notificationsRouter);
 
 export default router;

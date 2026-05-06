@@ -452,11 +452,12 @@ export function WalletPage() {
           },
           {
             label: "Locked Credits",
-            sub:   "In active sessions",
+            sub:   "Held for active agent sessions · auto-refunded on stop",
             value: user.lockedBalance,
             icon:  Lock,
             color: "text-amber-400",
             bg:    "border-amber-400/15",
+            tooltip: true,
           },
           {
             label: "Total Spent",

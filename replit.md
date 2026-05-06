@@ -23,8 +23,8 @@ Required env vars / secrets:
 - **Backend**: Node.js, Express 5, TypeScript (ESM), esbuild
 - **Auth**: Clerk (`@clerk/react` + `@clerk/express`) with custom 2FA and admin layer
 - **Database**: PostgreSQL 16 via Drizzle ORM (`drizzle-orm/node-postgres`)
-- **AI**: OpenAI via Replit AI Integrations (chat completions, signal analysis)
-- **Trading**: Binance Futures API (real execution), CoinGecko (price feeds via SSE)
+- **AI**: OpenAI via Replit AI Integrations (chat completions); NVIDIA Llama-3.1-Nemotron-70B for ABF signals
+- **Trading**: Binance Futures API (real execution), OKX public API (price feeds via SSE — no key required)
 
 ## Where things live
 
@@ -45,21 +45,28 @@ scripts/post-merge.sh   Runs after task merges: pnpm install + typecheck + db pu
 - **Clerk proxy in production**: `clerkProxyMiddleware` proxies Clerk Frontend API through `/api/__clerk` so Replit `.app` domains work without DNS CNAME.
 - **Hardcoded Clerk JWT public key**: Server verifies tokens offline using the embedded RSA public key — no secret key needed for JWT verification in dev.
 - **AES-256-GCM for exchange keys**: Binance API credentials are encrypted at rest using `SESSION_SECRET` as the key derivation input (`lib/encrypt.ts`).
+- **BotProvider outside ClerkProvider**: `BotProvider` wraps the entire tree for global engine state; a `ClerkBotAuthBridge` component (inside ClerkProvider) writes the real `getToken` fn to a module-level `botAuthRef` singleton so `BotProvider` can call it without being a Clerk descendant.
+- **Admin users use Clerk auth**: `GET/PATCH /admin/users` use `requireClerkAdmin` middleware — looks up the Clerk userId in the platform `users` table, then checks `admin_users` by email.
 
 ## Product
 
 - Landing page with sign-in/sign-up via Clerk
 - Onboarding flow → 2FA setup → trading dashboard
-- Three autonomous bot fleets: ABF (AI signals), SBF (security), VCBF (validation)
-- Real-time BTC/USDT price feed via SSE (CoinGecko)
+- Three autonomous agent fleets: ABF (AI signals), SBF (security), VCBF (validation)
+- Real-time BTC/USDT price feed via SSE (OKX — accurate exchange prices, bid/ask spread, 3s polling)
 - AI chat assistant (OpenAI gpt-4o-mini, streaming)
-- Admin panel (email+password auth, separate from Clerk)
+- Admin panel (Clerk SSO, separate admin_users table): Users tab (view/edit balance, plan, note), Fleet Mgmt, Security, Platform, Settings
 - Journal, billing, and fleet monitoring pages
+- Live notification bell: polls `/api/notifications` every 30s, shows unread badge, mark-read/delete in tray
+- Agent lifecycle billing: credits deducted on Launch Agent, refunded/settled on Stop or natural expiry
+- No-linked-account guard: modal alert before launching an agent if no exchange account is linked
+- Wallet page: Locked Credits card explains auto-refund on stop
 
 ## User preferences
 
 - Keep existing Clerk authentication — do not replace with Replit Auth
-- OpenAI used via Replit AI Integrations (no user-provided API key needed)
+- OpenAI used via Replit AI Integrations (chat assistant); ABF uses NVIDIA API (`NVIDIA_API_KEY` secret)
+- OKX used for market data (no API key needed); Binance is geo-blocked from Replit servers
 
 ## Gotchas
 

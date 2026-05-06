@@ -7,8 +7,15 @@ const router = Router();
 
 export interface PriceTick {
   price:        number;
-  volume:       number;   // approx BTC volume from 24h USD vol
-  spread:       number;   // estimated from price
+  volume:       number;   // 24h base asset volume
+  spread:       number;   // real bid-ask spread
+  changePct24h: number;
+  timestamp:    number;
+}
+
+export interface PairPrice {
+  ticker:       string;
+  price:        number;
   changePct24h: number;
   timestamp:    number;
 }
@@ -16,39 +23,62 @@ export interface PriceTick {
 // ── In-memory cache & SSE client registry ─────────────────────────────────────
 
 let cachedTick: PriceTick | null = null;
+let cachedPairs: PairPrice[] = [];
 const sseClients = new Set<Response>();
 
-// ── Types for multi-pair data ─────────────────────────────────────────────────
+// ── OKX symbol map ────────────────────────────────────────────────────────────
 
-export interface PairPrice {
-  ticker: string;
-  price: number;
-  changePct24h: number;
-  timestamp: number;
+interface OKXTicker {
+  instId:    string;
+  last:      string;
+  askPx:     string;
+  bidPx:     string;
+  vol24h:    string;   // base asset volume (e.g. BTC)
+  open24h:   string;   // 24h open price for % change calculation
 }
 
-let cachedPairs: PairPrice[] = [];
+interface OKXResponse {
+  code: string;
+  data: OKXTicker[];
+}
 
-// ── CoinGecko fetch ───────────────────────────────────────────────────────────
+const PAIR_MAP: Record<string, string> = {
+  "BTC-USDT":  "BTC/USDT",
+  "ETH-USDT":  "ETH/USDT",
+  "SOL-USDT":  "SOL/USDT",
+  "BNB-USDT":  "BNB/USDT",
+  "AVAX-USDT": "AVAX/USDT",
+  "POL-USDT":  "MATIC/USDT",   // MATIC rebranded to POL on OKX
+};
+
+// ── OKX fetch — BTC/USDT ticker ───────────────────────────────────────────────
 
 async function fetchPrice(): Promise<PriceTick | null> {
   try {
     const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true",
+      "https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT",
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000) }
     );
     if (!res.ok) return null;
-    const data = await res.json() as {
-      bitcoin: { usd: number; usd_24h_vol: number; usd_24h_change: number };
-    };
-    const price = data.bitcoin?.usd;
+
+    const json = await res.json() as OKXResponse;
+    if (json.code !== "0" || !json.data?.[0]) return null;
+
+    const t = json.data[0];
+    const price   = parseFloat(t.last);
+    const bid     = parseFloat(t.bidPx);
+    const ask     = parseFloat(t.askPx);
+    const open24h = parseFloat(t.open24h);
     if (!price || price <= 0) return null;
+
+    const spread      = ask > 0 && bid > 0 ? +(ask - bid).toFixed(2) : +(price * 0.00012).toFixed(2);
+    const changePct24h = open24h > 0 ? +((price - open24h) / open24h * 100).toFixed(4) : 0;
 
     return {
       price,
-      volume:       +(data.bitcoin.usd_24h_vol / price / 1000).toFixed(2),
-      spread:       +(price * 0.00012).toFixed(2),
-      changePct24h: +(data.bitcoin.usd_24h_change ?? 0).toFixed(4),
+      volume:       +(parseFloat(t.vol24h)).toFixed(2),
+      spread,
+      changePct24h,
       timestamp:    Date.now(),
     };
   } catch {
@@ -56,39 +86,34 @@ async function fetchPrice(): Promise<PriceTick | null> {
   }
 }
 
-// ── Fetch all trading pairs from CoinGecko ─────────────────────────────────────
+// ── OKX fetch — all trading pairs ─────────────────────────────────────────────
 
 async function fetchPairs(): Promise<PairPrice[]> {
   try {
-    const ids = "bitcoin,ethereum,solana,binancecoin,avalanche-2,polygon";
-    const res = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000) }
-    );
-    if (!res.ok) return [];
-    const data = await res.json() as Record<string, { usd: number; usd_24h_change: number }>;
+    const results = await Promise.all(
+      Object.keys(PAIR_MAP).map(async (instId) => {
+        const res = await fetch(
+          `https://www.okx.com/api/v5/market/ticker?instId=${instId}`,
+          { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000) }
+        );
+        if (!res.ok) return null;
+        const json = await res.json() as OKXResponse;
+        if (json.code !== "0" || !json.data?.[0]) return null;
 
-    const mapping: Record<string, string> = {
-      bitcoin: "BTC/USDT",
-      ethereum: "ETH/USDT",
-      solana: "SOL/USDT",
-      binancecoin: "BNB/USDT",
-      "avalanche-2": "AVAX/USDT",
-      polygon: "MATIC/USDT",
-    };
+        const t       = json.data[0];
+        const price   = parseFloat(t.last);
+        const open24h = parseFloat(t.open24h);
+        if (!price || price <= 0) return null;
 
-    return Object.entries(mapping)
-      .map(([id, ticker]) => {
-        const coin = data[id];
-        if (!coin?.usd || coin.usd <= 0) return null;
         return {
-          ticker,
-          price: coin.usd,
-          changePct24h: +(coin.usd_24h_change ?? 0).toFixed(2),
-          timestamp: Date.now(),
-        };
+          ticker:       PAIR_MAP[instId],
+          price,
+          changePct24h: open24h > 0 ? +((price - open24h) / open24h * 100).toFixed(2) : 0,
+          timestamp:    Date.now(),
+        } as PairPrice;
       })
-      .filter((p): p is PairPrice => p !== null);
+    );
+    return results.filter((p): p is PairPrice => p !== null);
   } catch {
     return [];
   }
@@ -107,7 +132,7 @@ function broadcast(tick: PriceTick) {
   }
 }
 
-// ── Polling loop (every 5s — well within CoinGecko free-tier 30 req/min) ─────
+// ── Polling loops ─────────────────────────────────────────────────────────────
 
 async function poll() {
   const tick = await fetchPrice();
@@ -117,12 +142,6 @@ async function poll() {
   }
 }
 
-poll(); // fetch immediately on startup
-const interval = setInterval(poll, 5000);
-if (interval.unref) interval.unref(); // don't block Node exit
-
-// ── Pairs polling loop (every 10s) ─────────────────────────────────────────────
-
 async function pollPairs() {
   const pairs = await fetchPairs();
   if (pairs.length > 0) {
@@ -130,20 +149,23 @@ async function pollPairs() {
   }
 }
 
-pollPairs(); // fetch immediately on startup
-const pairsInterval = setInterval(pollPairs, 10000);
+poll();
+pollPairs();
+
+const interval      = setInterval(poll,      3000);
+const pairsInterval = setInterval(pollPairs, 5000);
+
+if (interval.unref)      interval.unref();
 if (pairsInterval.unref) pairsInterval.unref();
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-// SSE stream — clients subscribe for real-time price ticks
 router.get("/market/stream", (req, res) => {
-  res.setHeader("Content-Type",  "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection",    "keep-alive");
+  res.setHeader("Content-Type",      "text/event-stream");
+  res.setHeader("Cache-Control",     "no-cache");
+  res.setHeader("Connection",        "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
 
-  // Flush cached tick immediately so client doesn't wait 5s
   if (cachedTick) {
     res.write(`data: ${JSON.stringify(cachedTick)}\n\n`);
   }
@@ -152,7 +174,6 @@ router.get("/market/stream", (req, res) => {
   req.on("close", () => sseClients.delete(res));
 });
 
-// One-shot REST price snapshot
 router.get("/market/price", (_req, res) => {
   if (!cachedTick) {
     res.status(503).json({ error: "Price not yet available — fetching" });
@@ -161,7 +182,6 @@ router.get("/market/price", (_req, res) => {
   res.json(cachedTick);
 });
 
-// Get all trading pair prices
 router.get("/market/pairs", (_req, res) => {
   res.json(cachedPairs.length > 0 ? cachedPairs : []);
 });

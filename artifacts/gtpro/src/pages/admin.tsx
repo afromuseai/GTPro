@@ -1,17 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield, Cpu, Bot, Users, BarChart2, Settings2, LogOut, Activity,
   AlertTriangle, CheckCircle, Clock, Zap, TrendingUp, Server,
-  Eye, Lock, ChevronRight, RefreshCw, Rocket,
+  Eye, Lock, ChevronRight, RefreshCw, Rocket, Edit2, Save, X,
+  DollarSign, Search,
 } from "lucide-react";
+import { useAdminAuth } from "@/contexts/admin-auth";
 import { Button } from "@/components/ui/button";
 import { useFleetEngine } from "@/engine/fleet-engine";
 import { useBotEngine } from "@/engine/bot-engine";
 import { useExchange } from "@/engine/exchange-engine";
 import { useMarketData } from "@/engine/market-data";
 import { useLocation } from "wouter";
-import { useClerk, useUser } from "@clerk/react";
+import { useClerk, useUser, useAuth } from "@clerk/react";
 
 // ── Re-export everything from fleets page so admin sees it ──────────────────
 import { FleetsPage } from "@/pages/fleets";
@@ -52,6 +54,7 @@ function StatCard({ label, value, sub, color = "text-foreground", icon: Icon }:
 
 const TABS = [
   { id: "overview",  label: "Overview",    icon: BarChart2 },
+  { id: "users",     label: "Users",       icon: Users     },
   { id: "fleets",    label: "Fleet Mgmt",  icon: Rocket    },
   { id: "security",  label: "Security",    icon: Shield    },
   { id: "platform",  label: "Platform",    icon: Server    },
@@ -59,6 +62,230 @@ const TABS = [
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
+
+// ── Users Tab ─────────────────────────────────────────────────────────────────
+
+interface AdminUser {
+  id: number;
+  clerkId: string;
+  email: string;
+  billingPlan: string;
+  balance: number;
+  lockedBalance: number;
+  totalSpent: number;
+  createdAt: string;
+  note: string | null;
+}
+
+function UsersTab() {
+  const { getToken } = useAuth();
+  const [users, setUsers]     = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState("");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft]     = useState<Partial<AdminUser>>({});
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    try {
+      const token = await getToken();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        credentials: "include",
+        headers: await authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json() as AdminUser[];
+      setUsers(data);
+    } catch {
+      setError("Could not load users");
+    } finally {
+      setLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getToken]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  async function saveUser(id: number) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify(draft),
+      });
+      if (!res.ok) throw new Error("Failed");
+      await fetchUsers();
+      setEditing(null);
+      setDraft({});
+    } catch {
+      setError("Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filtered = users.filter(u =>
+    u.email.toLowerCase().includes(search.toLowerCase()) ||
+    u.clerkId.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-[18px] font-black">Platform Users</h2>
+          <p className="text-[12px] text-muted-foreground/50 mt-0.5">{users.length} registered users</p>
+        </div>
+        <button onClick={fetchUsers}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-[12px] text-muted-foreground hover:text-foreground hover:border-white/[0.15] transition-all">
+          <RefreshCw size={12} /> Refresh
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by email or Clerk ID…"
+          className="w-full pl-8 pr-4 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] text-[13px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 transition-colors"
+        />
+      </div>
+
+      {error && (
+        <div className="p-3 rounded-xl border border-red-500/25 bg-red-500/5 text-[12px] text-red-400 flex items-center gap-2">
+          <AlertTriangle size={13} /> {error}
+          <button onClick={() => setError(null)} className="ml-auto"><X size={12} /></button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1,2,3].map(i => (
+            <div key={i} className="h-16 rounded-xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.length === 0 && (
+            <div className="py-12 text-center text-[13px] text-muted-foreground/40">No users found</div>
+          )}
+          {filtered.map(user => {
+            const isEditing = editing === user.id;
+            return (
+              <motion.div key={user.id}
+                layout
+                className="rounded-xl border border-white/[0.07] overflow-hidden"
+                style={{ background: "linear-gradient(145deg, hsl(228 45% 8%) 0%, hsl(228 52% 5%) 100%)" }}>
+                <div className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <Users size={14} className="text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13px] font-bold truncate">{user.email}</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/15 text-[10px] font-bold text-primary uppercase tracking-wide">
+                          {user.billingPlan}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground/30 font-mono">{user.clerkId}</span>
+                      <div className="flex items-center gap-4 mt-2 flex-wrap">
+                        {isEditing ? (
+                          <>
+                            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+                              Balance
+                              <input
+                                type="number" step="0.01"
+                                defaultValue={user.balance}
+                                onChange={e => setDraft(d => ({ ...d, balance: parseFloat(e.target.value) }))}
+                                className="w-24 px-2 py-0.5 rounded-lg border border-white/[0.1] bg-white/[0.04] text-[12px] text-foreground focus:outline-none focus:border-primary/40"
+                              />
+                            </label>
+                            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+                              Plan
+                              <select
+                                defaultValue={user.billingPlan}
+                                onChange={e => setDraft(d => ({ ...d, billingPlan: e.target.value }))}
+                                className="px-2 py-0.5 rounded-lg border border-white/[0.1] bg-[hsl(228_45%_10%)] text-[12px] text-foreground focus:outline-none focus:border-primary/40">
+                                {["free","starter","pro","enterprise"].map(p => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 flex-1">
+                              Note
+                              <input
+                                type="text"
+                                defaultValue={user.note ?? ""}
+                                onChange={e => setDraft(d => ({ ...d, note: e.target.value }))}
+                                placeholder="Admin note…"
+                                className="flex-1 min-w-0 px-2 py-0.5 rounded-lg border border-white/[0.1] bg-white/[0.04] text-[12px] text-foreground focus:outline-none focus:border-primary/40"
+                              />
+                            </label>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground/60">
+                              <DollarSign size={10} className="text-emerald-400" />
+                              <span className="text-emerald-400 font-bold">${user.balance.toFixed(2)}</span> balance
+                            </span>
+                            <span className="text-[11px] text-muted-foreground/40">
+                              ${user.lockedBalance.toFixed(2)} locked
+                            </span>
+                            <span className="text-[11px] text-muted-foreground/40">
+                              ${user.totalSpent.toFixed(2)} spent
+                            </span>
+                            {user.note && (
+                              <span className="text-[11px] text-amber-400/60 italic truncate max-w-xs">{user.note}</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isEditing ? (
+                        <>
+                          <button onClick={() => { setEditing(null); setDraft({}); }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/[0.08] text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                            <X size={11} /> Cancel
+                          </button>
+                          <button onClick={() => saveUser(user.id)} disabled={saving}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/15 border border-primary/25 text-[11px] text-primary hover:bg-primary/20 transition-colors disabled:opacity-50">
+                            <Save size={11} /> {saving ? "Saving…" : "Save"}
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => { setEditing(user.id); setDraft({}); }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/[0.08] text-[11px] text-muted-foreground hover:text-foreground hover:border-white/[0.15] transition-colors">
+                          <Edit2 size={11} /> Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Overview Tab ─────────────────────────────────────────────────────────────
 
@@ -300,7 +527,7 @@ function PlatformTab() {
     { label: "Database",            value: "PostgreSQL 15",         icon: Server },
     { label: "Auth Provider",       value: "Clerk SSO",            icon: Lock },
     { label: "Encryption",          value: "AES-256-GCM",          icon: Shield },
-    { label: "Market Feed",         value: "CoinGecko + Binance",  icon: TrendingUp },
+    { label: "Market Feed",         value: "OKX (Real-time SSE)",  icon: TrendingUp },
     { label: "BTC Reference Price", value: `$${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp },
     { label: "ABF Events",          value: abfStats.eventsProcessed.toLocaleString(), icon: Activity },
     { label: "SBF Events",          value: sbfStats.eventsProcessed.toLocaleString(), icon: Shield },
@@ -450,6 +677,7 @@ export function AdminPage() {
             transition={{ duration: 0.2 }}>
 
             {activeTab === "overview"  && <OverviewTab />}
+            {activeTab === "users"    && <UsersTab />}
             {activeTab === "fleets"   && (
               <div>
                 <div className="flex items-center gap-2 mb-6">

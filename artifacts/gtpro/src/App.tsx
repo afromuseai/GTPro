@@ -25,7 +25,7 @@ import { AppLayout } from "@/components/layout";
 import { DevBypassProvider, useDevBypass, IS_DEV } from "@/contexts/dev-bypass";
 import { AdminAuthProvider, useAdminAuth, AdminAuthContext } from "@/contexts/admin-auth";
 import { motion } from "framer-motion";
-import { BotProvider } from "@/engine/bot-engine";
+import { BotProvider, botAuthRef } from "@/engine/bot-engine";
 import { SignalProvider } from "@/engine/signal-engine";
 import { FleetProvider } from "@/engine/fleet-engine";
 import { MarketDataProvider } from "@/engine/market-data";
@@ -505,6 +505,17 @@ function AdminRoute() {
   return <AdminPage />;
 }
 
+// ── Bridge: provide Clerk getToken to BotProvider (which is outside ClerkProvider) ──
+
+function ClerkBotAuthBridge() {
+  const { getToken } = useAuth();
+  React.useEffect(() => {
+    botAuthRef.getToken = getToken;
+    return () => { botAuthRef.getToken = async () => null; };
+  }, [getToken]);
+  return null;
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const qc = useQueryClient();
@@ -583,6 +594,7 @@ export default function App() {
                   signUpUrl={`${basePath}/sign-up`}
                 >
                   <AdminAuthProvider>
+                    <ClerkBotAuthBridge />
                     <ClerkQueryClientCacheInvalidator />
                     <ExchangeProvider>
                     <WalletProvider>

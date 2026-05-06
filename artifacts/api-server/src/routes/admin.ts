@@ -1,7 +1,8 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { db, adminUsers } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
+import { db, adminUsers, users } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -29,7 +30,7 @@ function signToken(payload: Record<string, unknown>): string {
   return `${header}.${body}.${sig}`;
 }
 
-function verifyToken(token: string): Record<string, unknown> | null {
+export function verifyToken(token: string): Record<string, unknown> | null {
   try {
     const [header, body, sig] = token.split(".");
     if (!header || !body || !sig) return null;
@@ -43,14 +44,60 @@ function verifyToken(token: string): Record<string, unknown> | null {
   }
 }
 
+// ── Admin JWT middleware (separate admin session) ─────────────────────────────
+
+function requireAdminJwt(req: Parameters<typeof getAuth>[0], res: any, next: any) {
+  const auth = (req as any).headers.authorization ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const payload = verifyToken(token);
+  if (!payload) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  (req as any).adminPayload = payload;
+  next();
+}
+
+// ── Clerk-based admin middleware ───────────────────────────────────────────────
+// Used by admin panel routes accessed via Clerk SSO
+
+async function requireClerkAdmin(req: Parameters<typeof getAuth>[0], res: any, next: any) {
+  const clerkAuth = getAuth(req);
+  if (!clerkAuth?.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    // Look up the platform user by Clerk userId → get their email → check adminUsers
+    const platformUser = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.clerkId, clerkAuth.userId))
+      .limit(1);
+
+    const email = platformUser[0]?.email?.toLowerCase().trim();
+    if (!email) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const adminRow = await db.select().from(adminUsers).where(eq(adminUsers.email, email)).limit(1);
+    if (adminRow.length === 0) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    next();
+  } catch {
+    res.status(500).json({ error: "Auth check failed" });
+  }
+}
+
 // ── Seed admin on startup ────────────────────────────────────────────────────
 
 export async function seedAdminUser() {
   try {
-    // Remove stale fake email if it somehow exists
     await db.delete(adminUsers).where(eq(adminUsers.email, "joshuaa@gmail.com"));
 
-    // Seed joshuaa2g5 admin
     const existing1 = await db.select().from(adminUsers).where(eq(adminUsers.email, "joshuaa2g5@gmail.com")).limit(1);
     if (existing1.length === 0) {
       await db.insert(adminUsers).values({
@@ -60,7 +107,6 @@ export async function seedAdminUser() {
       });
     }
 
-    // Seed starboywizikal admin
     const existing2 = await db.select().from(adminUsers).where(eq(adminUsers.email, "starboywizikal@gmail.com")).limit(1);
     if (existing2.length === 0) {
       await db.insert(adminUsers).values({
@@ -70,7 +116,6 @@ export async function seedAdminUser() {
       });
     }
   } catch (err) {
-    // Table may not exist yet during first migration — swallow silently
     console.error("[admin-seed] Could not seed admin user:", err);
   }
 }
@@ -116,8 +161,6 @@ router.get("/admin/verify", (req, res) => {
 });
 
 // ── GET /admin/check?email=xxx ────────────────────────────────────────────────
-// Used by the frontend to check if a Clerk-authenticated user is an admin
-// No password required — Clerk handles identity; we just check the email list
 
 router.get("/admin/check", async (req, res) => {
   const email = (req.query.email as string | undefined)?.toLowerCase().trim();
@@ -130,6 +173,87 @@ router.get("/admin/check", async (req, res) => {
     res.json({ isAdmin: true, role: rows[0].role });
   } else {
     res.json({ isAdmin: false });
+  }
+});
+
+// ── GET /admin/users ──────────────────────────────────────────────────────────
+// Returns all platform users (requires Clerk admin auth)
+
+router.get("/admin/users", requireClerkAdmin, async (req, res) => {
+  try {
+    const allUsers = await db
+      .select({
+        id:           users.id,
+        clerkId:      users.clerkId,
+        email:        users.email,
+        balance:      users.balance,
+        lockedBalance:users.lockedBalance,
+        totalSpent:   users.totalSpent,
+        billingPlan:  users.billingPlan,
+        usedHours:    users.usedHours,
+        includedHours:users.includedHours,
+        createdAt:    users.createdAt,
+        updatedAt:    users.updatedAt,
+      })
+      .from(users)
+      .orderBy(desc(users.createdAt));
+
+    return res.json(
+      allUsers.map(u => ({
+        ...u,
+        balance:       parseFloat((u.balance ?? 0).toString()),
+        lockedBalance: parseFloat((u.lockedBalance ?? 0).toString()),
+        totalSpent:    parseFloat((u.totalSpent ?? 0).toString()),
+      }))
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to fetch admin users");
+    return res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// ── PATCH /admin/users/:id ────────────────────────────────────────────────────
+// Update a platform user's balance or plan (requires Clerk admin auth)
+
+router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { balance, lockedBalance, billingPlan, note } = req.body as {
+    balance?:       number;
+    lockedBalance?: number;
+    billingPlan?:   string;
+    note?:          string;
+  };
+
+  if (balance !== undefined && (typeof balance !== "number" || balance < 0)) {
+    return res.status(400).json({ error: "Balance must be a non-negative number" });
+  }
+  if (lockedBalance !== undefined && (typeof lockedBalance !== "number" || lockedBalance < 0)) {
+    return res.status(400).json({ error: "Locked balance must be a non-negative number" });
+  }
+
+  try {
+    const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    if (!existing) return res.status(404).json({ error: "User not found" });
+
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    if (balance      !== undefined) updateData.balance       = balance;
+    if (lockedBalance !== undefined) updateData.lockedBalance = lockedBalance;
+    if (billingPlan   !== undefined) updateData.billingPlan   = billingPlan;
+
+    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+
+    req.log.info({ id, changes: updateData, note }, "Admin updated user");
+    return res.json({
+      id:            updated.id,
+      email:         updated.email,
+      balance:       parseFloat((updated.balance ?? 0).toString()),
+      lockedBalance: parseFloat((updated.lockedBalance ?? 0).toString()),
+      totalSpent:    parseFloat((updated.totalSpent ?? 0).toString()),
+      billingPlan:   updated.billingPlan,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to update user");
+    return res.status(500).json({ error: "Failed to update user" });
   }
 });
 

@@ -5,6 +5,21 @@ import React, {
 import { useMarketData } from "./market-data";
 import { useExchange }   from "./exchange-engine";
 
+const BASE_PATH = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+// ── Bot auth singleton ref ────────────────────────────────────────────────────
+// A bridge component inside ClerkProvider (see App.tsx) stores the real
+// Clerk getToken function here so BotProvider can call it without being
+// a descendant of ClerkProvider.
+
+export const botAuthRef: { getToken: () => Promise<string | null> } = {
+  getToken: async () => null,
+};
+
+// Keep BotAuthContext for backwards compat (unused after this fix)
+interface BotAuthCtx { getToken: () => Promise<string | null> }
+export const BotAuthContext = createContext<BotAuthCtx>({ getToken: async () => null });
+
 export type Strategy   = "Sweep & Reclaim" | "Absorption Reversal" | "Void Continuation";
 export type DurationKey = "1h" | "3h" | "6h" | "12h";
 export type BotStatus  = "RUNNING" | "PAUSED" | "STOPPED" | "COMPLETED";
@@ -135,6 +150,8 @@ export const BotEngineContext = createContext<BotEngineContextValue>({
 });
 
 export function BotProvider({ children }: { children: React.ReactNode }) {
+  // getToken comes from botAuthRef, populated by ClerkBotAuthBridge in App.tsx
+  const getToken = useCallback(() => botAuthRef.getToken(), []);
   const { currentPrice }                          = useMarketData();
   const { status: xStatus, placeEntry, closePosition } = useExchange();
 
@@ -155,6 +172,31 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   const xStatusRef   = useRef(xStatus);
   const placeEntryRef    = useRef(placeEntry);
   const closePositionRef = useRef(closePosition);
+  const getTokenRef      = useRef(getToken);
+  const sessionIdRef     = useRef<string | null>(null);
+
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
+  // ── Billing API helper ─────────────────────────────────────────────────────
+
+  async function callBillingApi(path: string, body: Record<string, unknown>) {
+    try {
+      let token: string | null = null;
+      try { token = await getTokenRef.current(); } catch {}
+      const res = await fetch(`${BASE_PATH}${path}`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  }
 
   useEffect(() => { botRef.current     = bot; });
   useEffect(() => { priceRef.current   = currentPrice; });
@@ -237,6 +279,13 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       } : null);
       if (logTickRef.current) { clearInterval(logTickRef.current); logTickRef.current = null; }
       flash(finalU >= 0 ? "up" : "down");
+
+      // ── End billing session on natural expiry ────────────────────────────
+      const sid = sessionIdRef.current;
+      if (sid) {
+        callBillingApi("/api/bot/session/end", { sessionId: sid, simulatedProfit: finalRealized });
+        sessionIdRef.current = null;
+      }
       return;
     }
 
@@ -388,6 +437,8 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     logIdxRef.current = 0;
     const now  = Date.now();
     const live = Boolean(xStatusRef.current?.connected);
+    const estimatedHours = DURATION_MAP[duration] / 3_600_000;
+
     setBot({
       id:            crypto.randomUUID(),
       strategy,
@@ -401,7 +452,7 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       trades:        0,
       liveExchange:  live,
     });
-    appendLog(`Bot launched — Strategy: ${strategy}`, "system");
+    appendLog(`Agent launched — Strategy: ${strategy}`, "system");
     appendLog(
       live
         ? `🔴 LIVE MODE — trading real capital on ${xStatusRef.current?.exchange ?? "exchange"}`
@@ -410,6 +461,15 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     );
     appendLog(`Session duration: ${duration}`, "system");
     startLogTick(strategy);
+
+    // ── Bill the session start ───────────────────────────────────────────────
+    callBillingApi("/api/bot/session/start", { strategy, estimatedHours })
+      .then(data => {
+        if (data?.sessionId) {
+          sessionIdRef.current = data.sessionId;
+          appendLog(`Credits reserved for ${duration} session`, "system");
+        }
+      });
   }, [appendLog, startLogTick]);
 
   const pause = useCallback(() => {
@@ -430,11 +490,14 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   const stop = useCallback(() => {
     stopLogTick();
     const current = botRef.current;
+    let finalPnl = current?.realizedPnl ?? 0;
+
     if (current?.openTrade) {
       const cp     = priceRef.current;
       const finalU = calcUnrealized(current.openTrade, cp);
+      finalPnl = +(finalPnl + finalU).toFixed(2);
       appendLog(
-        `Bot stopped — ${current.openTrade.direction.toUpperCase()} closed @ $${cp.toFixed(0)} · ${finalU >= 0 ? "+" : ""}$${finalU.toFixed(2)}`,
+        `Agent stopped — ${current.openTrade.direction.toUpperCase()} closed @ $${cp.toFixed(0)} · ${finalU >= 0 ? "+" : ""}$${finalU.toFixed(2)}`,
         "warn",
       );
       fireExchangeClose(current.openTrade);
@@ -446,7 +509,14 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       });
     } else {
       setBot(prev => prev ? { ...prev, status: "STOPPED" } : null);
-      appendLog("Bot stopped by user — all positions closed", "warn");
+      appendLog("Agent stopped by user — all positions closed", "warn");
+    }
+
+    // ── End billing session ──────────────────────────────────────────────────
+    const sid = sessionIdRef.current;
+    if (sid) {
+      callBillingApi("/api/bot/session/end", { sessionId: sid, simulatedProfit: finalPnl });
+      sessionIdRef.current = null;
     }
   }, [appendLog, recordTrade]);
 

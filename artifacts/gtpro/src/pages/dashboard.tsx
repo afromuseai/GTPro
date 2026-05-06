@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { useGetDashboardStats, getGetDashboardStatsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DollarSign, Bot, TrendingUp, ArrowUpRight, ArrowDownRight, Play, Pause, Square, Zap, Clock, Cpu, Shield, CheckCircle, Wifi, WifiOff, Target, ShieldAlert, Crosshair, BarChart3, Activity, Check, AlertTriangle, LineChart, ChevronDown, ChevronUp, Layers, Radar } from "lucide-react";
+import { DollarSign, Bot, TrendingUp, ArrowUpRight, ArrowDownRight, Play, Pause, Square, Zap, Clock, Cpu, Shield, CheckCircle, Wifi, WifiOff, Target, ShieldAlert, Crosshair, BarChart3, Activity, Check, AlertTriangle, LineChart, ChevronDown, ChevronUp, Layers, Radar, Link as LinkIcon, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBotEngine, Strategy, DurationKey, LogType, TradeRecord, TradeOutcome } from "@/engine/bot-engine";
+import { useExchange } from "@/engine/exchange-engine";
 import { useSignalEngine } from "@/engine/signal-engine";
 import type { Signal } from "@/engine/signal-engine";
 import { useFleetEngine } from "@/engine/fleet-engine";
@@ -1325,10 +1326,20 @@ export function DashboardPage() {
   const { data: stats, isLoading } = useGetDashboardStats({ query: { queryKey: getGetDashboardStatsQueryKey() } });
   const { bot, logs, pnlFlash, launch, pause, resume, stop } = useBotEngine();
   const { currentPrice } = useMarketData();
+  const { accounts } = useExchange();
 
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy>("Sweep & Reclaim");
   const [selectedDuration, setSelectedDuration] = useState<DurationKey>("1h");
+  const [showNoAccountAlert, setShowNoAccountAlert] = useState(false);
   const remaining = useCountdown(bot?.status === "RUNNING" ? bot.endTime : null);
+
+  function handleLaunchClick() {
+    if (accounts.length === 0) {
+      setShowNoAccountAlert(true);
+      return;
+    }
+    launch(selectedStrategy, selectedDuration);
+  }
 
   const totalPnl = (stats?.pnlToday ?? 0) + (bot?.pnl ?? 0);
   const activeBots = bot && (bot.status === "RUNNING" || bot.status === "PAUSED") ? 1 : 0;
@@ -1378,7 +1389,7 @@ export function DashboardPage() {
             <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent ${activeBots > 0 ? "via-primary/60" : "via-white/10"} to-transparent`} />
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[11px] font-bold tracking-[0.18em] uppercase text-muted-foreground">Active Bots</span>
+                <span className="text-[11px] font-bold tracking-[0.18em] uppercase text-muted-foreground">Active Agents</span>
                 <div className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${activeBots > 0 ? "bg-primary/20 border-primary/30" : "bg-primary/10 border-primary/15"}`}>
                   <Bot size={14} className="text-primary" />
                 </div>
@@ -1615,7 +1626,7 @@ export function DashboardPage() {
                       {bot.status === "RUNNING" ? (
                         <Button onClick={pause} variant="outline" size="sm"
                           className="flex-1 h-10 text-[13px] font-bold border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50 gap-2 transition-all">
-                          <Pause size={14} /> Pause Bot
+                          <Pause size={14} /> Pause Agent
                         </Button>
                       ) : (
                         <Button onClick={resume} variant="outline" size="sm"
@@ -1625,7 +1636,7 @@ export function DashboardPage() {
                       )}
                       <Button onClick={stop} variant="outline" size="sm"
                         className="flex-1 h-10 text-[13px] font-bold border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50 gap-2 transition-all">
-                        <Square size={14} /> Stop Bot
+                        <Square size={14} /> Stop Agent
                       </Button>
                     </div>
                   </div>
@@ -1649,7 +1660,7 @@ export function DashboardPage() {
                         <Zap size={16} className="text-primary" />
                       </div>
                       <div>
-                        <h3 className="text-[15px] font-bold">Bot Launcher</h3>
+                        <h3 className="text-[15px] font-bold">Agent Launcher</h3>
                         <p className="text-[12px] text-muted-foreground">Select a strategy and activate GTPro's execution engine.</p>
                       </div>
                     </div>
@@ -1714,10 +1725,10 @@ export function DashboardPage() {
                     {/* Launch */}
                     <motion.div whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.98 }}>
                       <Button
-                        onClick={() => launch(selectedStrategy, selectedDuration)}
+                        onClick={handleLaunchClick}
                         className="w-full h-12 text-[15px] font-black bg-primary text-primary-foreground hover:bg-primary/90 glow-btn transition-all duration-300 gap-2"
                       >
-                        <Play size={16} fill="currentColor" /> Launch Bot
+                        <Play size={16} fill="currentColor" /> Launch Agent
                       </Button>
                     </motion.div>
                   </div>
@@ -1785,6 +1796,57 @@ export function DashboardPage() {
           </div>
         </motion.div>
       </div>
+
+      {/* ── No Linked Account Alert ── */}
+      <AnimatePresence>
+        {showNoAccountAlert && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowNoAccountAlert(false)} />
+            <motion.div
+              className="relative w-full max-w-sm rounded-2xl border border-amber-400/25 overflow-hidden z-10 shadow-[0_20px_60px_rgba(0,0,0,0.7)]"
+              style={{ background: "linear-gradient(145deg, hsl(228 45% 9%) 0%, hsl(228 52% 6%) 100%)" }}
+              initial={{ scale: 0.92, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 20 }}
+              transition={{ duration: 0.22 }}
+            >
+              <div className="h-px bg-gradient-to-r from-transparent via-amber-400/50 to-transparent" />
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+                    <AlertTriangle size={18} className="text-amber-400" />
+                  </div>
+                  <button onClick={() => setShowNoAccountAlert(false)} className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+                <h3 className="text-[16px] font-black mb-2">No Exchange Account Linked</h3>
+                <p className="text-[12px] text-muted-foreground/80 leading-relaxed mb-5">
+                  You need to link at least one exchange account before launching an agent. The agent will trade on your linked exchange account.
+                </p>
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-9 text-[12px] border-white/[0.1] text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowNoAccountAlert(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 h-9 text-[12px] font-bold bg-amber-500 hover:bg-amber-500/90 text-black gap-1.5"
+                    onClick={() => { setShowNoAccountAlert(false); window.location.href = "/linked-accounts"; }}
+                  >
+                    <LinkIcon size={13} /> Link Account
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
