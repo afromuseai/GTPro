@@ -563,12 +563,10 @@ export default function App() {
   return (
     <DevBypassProvider>
       <QueryClientProvider client={queryClient}>
-        <WalletProvider>
         <MarketDataProvider>
         <LiquidityProvider>
         <LearningProvider>
         <FleetProvider>
-        <ExchangeProvider>
         <BotProvider>
           <SignalProvider>
             <WouterRouter base={basePath}>
@@ -586,7 +584,11 @@ export default function App() {
                 >
                   <AdminAuthProvider>
                     <ClerkQueryClientCacheInvalidator />
-                    <AppRoutes />
+                    <ExchangeProvider>
+                    <WalletProvider>
+                      <AppRoutes />
+                    </WalletProvider>
+                    </ExchangeProvider>
                   </AdminAuthProvider>
                 </ClerkProvider>
               )}
@@ -594,12 +596,10 @@ export default function App() {
             <Toaster />
           </SignalProvider>
         </BotProvider>
-        </ExchangeProvider>
         </FleetProvider>
         </LearningProvider>
         </LiquidityProvider>
         </MarketDataProvider>
-        </WalletProvider>
       </QueryClientProvider>
     </DevBypassProvider>
   );

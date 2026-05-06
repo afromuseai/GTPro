@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/react";
 
 export interface WalletUser {
   id:              string;
   email:           string;
-  balance:         number;   // service credits
+  balance:         number;
   lockedBalance:   number;
   totalSpent:      number;
   billingPlan:     string;
@@ -16,7 +17,7 @@ export interface WalletUser {
 
 export interface Transaction {
   id:          string;
-  type:        string; // deposit | usage | refund | plan_purchase
+  type:        string;
   amount:      number;
   description: string;
   createdAt:   Date;
@@ -50,7 +51,7 @@ interface WalletContextValue {
 export const WalletContext = createContext<WalletContextValue>({
   user:             null,
   transactions:     [],
-  isLoading:        true,
+  isLoading:        false,
   error:            null,
   refreshWallet:    async () => {},
   deposit:          async () => ({ success: false, newBalance: 0 }),
@@ -62,21 +63,33 @@ export const WalletContext = createContext<WalletContextValue>({
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-async function apiFetch(path: string, init?: RequestInit) {
-  return fetch(`${BASE}${path}`, { credentials: "include", ...init });
-}
-
 export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+
   const [user,         setUser]         = useState<WalletUser | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading,    setIsLoading]    = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const authFetch = useCallback(async (path: string, init?: RequestInit) => {
+    let token: string | null = null;
+    try { token = await getToken(); } catch {}
+    return fetch(`${BASE}${path}`, {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.headers ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+  }, [getToken]);
+
   const refreshWallet = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/billing/user");
-      if (!res.ok) throw new Error("Failed to fetch wallet");
+      const res = await authFetch("/api/billing/user");
+      if (!res.ok) throw new Error(`Failed to fetch wallet (${res.status})`);
       const data = (await res.json()) as WalletUser;
       data.planExpiresAt = data.planExpiresAt ? new Date(data.planExpiresAt) : null;
       setUser(data);
@@ -87,20 +100,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [authFetch]);
 
   const refreshTransactions = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/billing/transactions");
+      const res = await authFetch("/api/billing/transactions");
       if (!res.ok) return;
       const data = (await res.json()) as Transaction[];
       setTransactions(
         data.map(t => ({ ...t, createdAt: new Date(t.createdAt) })),
       );
     } catch {}
-  }, []);
+  }, [authFetch]);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setIsLoading(false);
+      setUser(null);
+      return;
+    }
     refreshWallet();
     refreshTransactions();
     pollRef.current = setInterval(() => {
@@ -110,12 +129,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [refreshWallet, refreshTransactions]);
+  }, [isLoaded, isSignedIn, refreshWallet, refreshTransactions]);
 
   const deposit = useCallback(async (amount: number) => {
-    const res = await apiFetch("/api/billing/deposit", {
+    const res = await authFetch("/api/billing/deposit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount }),
     });
     if (!res.ok) {
@@ -126,12 +144,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await refreshWallet();
     await refreshTransactions();
     return data;
-  }, [refreshWallet, refreshTransactions]);
+  }, [authFetch, refreshWallet, refreshTransactions]);
 
   const subscribePlan = useCallback(async (plan: string) => {
-    const res = await apiFetch("/api/billing/subscribe", {
+    const res = await authFetch("/api/billing/subscribe", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ plan }),
     });
     if (!res.ok) {
@@ -142,12 +159,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await refreshWallet();
     await refreshTransactions();
     return { ...data, expiresAt: data.expiresAt ? new Date(data.expiresAt) : null };
-  }, [refreshWallet, refreshTransactions]);
+  }, [authFetch, refreshWallet, refreshTransactions]);
 
   const startBotSession = useCallback(async (strategy: string, estimatedHours: number) => {
-    const res = await apiFetch("/api/bot/session/start", {
+    const res = await authFetch("/api/bot/session/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ strategy, estimatedHours }),
     });
     if (!res.ok) {
@@ -156,28 +172,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     await refreshWallet();
     return await res.json() as { sessionId: string; estimatedCost: number; hourlyRate: number; paidFromPlan: boolean };
-  }, [refreshWallet]);
+  }, [authFetch, refreshWallet]);
 
   const endBotSession = useCallback(async (sessionId: string, simulatedProfit = 0) => {
-    const res = await apiFetch("/api/bot/session/end", {
+    const res = await authFetch("/api/bot/session/end", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId, simulatedProfit }),
     });
     if (!res.ok) throw new Error("Session end failed");
     await refreshWallet();
     await refreshTransactions();
     return await res.json() as { actualCost: number; refund: number; simulatedProfit: number };
-  }, [refreshWallet, refreshTransactions]);
+  }, [authFetch, refreshWallet, refreshTransactions]);
 
   const getSession = useCallback(async (sessionId: string) => {
-    const res = await apiFetch(`/api/bot/session/${sessionId}`);
+    const res = await authFetch(`/api/bot/session/${sessionId}`);
     if (!res.ok) throw new Error("Session fetch failed");
     const data = (await res.json()) as BotSession;
     data.startTime = new Date(data.startTime);
     data.endTime = data.endTime ? new Date(data.endTime) : null;
     return data;
-  }, []);
+  }, [authFetch]);
 
   return (
     <WalletContext.Provider

@@ -31,11 +31,15 @@ export async function getOrCreateUser(clerkId: string, email: string) {
   const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId));
   if (existing) return existing;
 
-  const [created] = await db
+  // Use ON CONFLICT DO NOTHING to handle concurrent inserts gracefully
+  await db
     .insert(users)
     .values({ clerkId, email })
-    .returning();
-  return created;
+    .onConflictDoNothing()
+    .execute();
+
+  const [row] = await db.select().from(users).where(eq(users.clerkId, clerkId));
+  return row;
 }
 
 export async function getUserWallet(clerkId: string) {

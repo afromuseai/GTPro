@@ -85,8 +85,8 @@ router.post("/chat", async (req, res) => {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 400,
+      model: "gpt-4o-mini",
+      max_tokens: 400,
       messages: [
         { role: "system", content: SYSTEM_PROMPT + contextBlock },
         ...messages.slice(-12),

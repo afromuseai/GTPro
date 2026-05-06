@@ -27,12 +27,7 @@ billingRouter.get("/billing/user", async (req, res) => {
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    let user;
-    try {
-      user = await getUserWallet(clerkId);
-    } catch {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = await getOrCreateUser(clerkId, "");
     const planExpiry = user.planExpiresAt ? new Date(user.planExpiresAt) : null;
     const isExpired = planExpiry ? new Date() > planExpiry : false;
 
@@ -130,12 +125,7 @@ billingRouter.get("/billing/transactions", async (req, res) => {
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    let user;
-    try {
-      user = await getUserWallet(clerkId);
-    } catch {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = await getOrCreateUser(clerkId, "");
     const txns = await db
       .select()
       .from(transactions)

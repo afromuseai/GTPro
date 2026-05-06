@@ -17,6 +17,9 @@ export const users = pgTable("users", {
   // Onboarding
   hasCompletedOnboarding: boolean("has_completed_onboarding").notNull().default(false),
 
+  // Simulated profit tracking (display only — never added to balance)
+  totalSimulatedProfit: real("total_simulated_profit").notNull().default(0),
+
   createdAt:      timestamp("created_at").defaultNow().notNull(),
   updatedAt:      timestamp("updated_at").defaultNow().notNull(),
 });
@@ -37,6 +40,9 @@ export const botSessions = pgTable("bot_sessions", {
   paidFromPlan:     boolean("paid_from_plan").notNull().default(false),
 
   status:           text("status").notNull().default("running"),
+
+  // Simulated profit recorded at session end (display only)
+  simulatedProfit:  real("simulated_profit"),
 
   createdAt:        timestamp("created_at").defaultNow().notNull(),
 });

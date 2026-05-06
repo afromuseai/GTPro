@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/react";
 
 export interface ExchangeAccount {
   exchange:      string;
@@ -53,14 +54,25 @@ export const ExchangeContext = createContext<ExchangeContextValue>({
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-async function apiFetch(path: string, init?: RequestInit) {
-  return fetch(`${BASE}${path}`, { credentials: "include", ...init });
-}
-
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
+  const { getToken } = useAuth();
   const [accounts,  setAccounts]  = useState<ExchangeAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const apiFetch = useCallback(async (path: string, init?: RequestInit) => {
+    let token: string | null = null;
+    try { token = await getToken(); } catch {}
+    return fetch(`${BASE}${path}`, {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.headers ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+  }, [getToken]);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -73,7 +85,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [apiFetch]);
 
   useEffect(() => {
     refreshStatus();
