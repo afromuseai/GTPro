@@ -1,0 +1,130 @@
+
+Enhance GTPro by adding a LIQUIDITY + ORDER FLOW SIMULATION LAYER.
+
+Do NOT remove or modify existing systems:
+- ABF engine
+- SBF / VCBF fleets
+- market data feed
+- execution system
+- UI dashboard
+
+This is an ADD-ON layer only.
+
+========================
+1. NEW MODULE: /engine/liquidity/
+========================
+
+Create a liquidity simulation engine that runs alongside market-data.
+
+It must generate:
+
+A) LIQUIDITY ZONES
+- Equal highs (EQH)
+- Equal lows (EQL)
+- Session high / low zones
+- “Stop clusters” near recent highs/lows
+
+B) ORDER FLOW SIGNALS (SIMULATED)
+- buy pressure vs sell pressure imbalance
+- aggressive volume spikes
+- absorption events (price not moving despite volume)
+- fake breakout detection (wick rejection)
+
+C) LIQUIDITY STATE OBJECT
+Every tick must output:
+
+{
+  liquidityZones: [...],
+  imbalance: "buy | sell | neutral",
+  absorption: true | false,
+  sweepDetected: true | false,
+  volatilityPressure: number
+}
+
+========================
+2. MARKET DATA INTEGRATION
+========================
+
+Modify existing market-data pipeline:
+
+Market Data → Liquidity Engine → ABF Engine → AI Model → Signal
+
+Liquidity layer must enrich market snapshot BEFORE ABF analysis.
+
+========================
+3. ABF SIGNAL ENHANCEMENT
+========================
+
+Update ABF input prompt sent to AI:
+
+Include:
+- liquidity zones nearby price
+- whether sweep detected
+- absorption status
+- order flow imbalance
+- volatility pressure index
+
+AI must prioritize:
+- liquidity sweeps
+- absorption reversals
+- fake breakout detection
+
+========================
+4. SIGNAL LOGIC IMPROVEMENT
+
+Adjust signal weighting:
+
+- Sweep + rejection → HIGH confidence reversal signal
+- Absorption at support → BUY bias
+- Absorption at resistance → SELL bias
+- High volatility + no liquidity → HOLD bias
+
+========================
+5. EXECUTION ENGINE UPGRADE
+
+Improve realism:
+
+- If sweepDetected = true → increase slippage simulation
+- If liquidity zone is nearby → increase fill delay
+- If absorption detected → improve execution price (better fill simulation)
+
+========================
+6. FRONTEND ENHANCEMENT
+
+Add new "Liquidity Panel" in Dashboard:
+
+Display:
+- current liquidity zones (simplified list)
+- sweep detected indicator (yes/no)
+- absorption indicator
+- order flow imbalance bar (visual green/red bar)
+
+========================
+7. ABF LOG ENHANCEMENT
+
+Fleet logs must now include liquidity reasoning:
+
+Examples:
+- "Liquidity sweep detected at $104,230 → reversal bias activated"
+- "Absorption detected on buy side → bullish pressure building"
+- "No liquidity support → signal downgraded to HOLD"
+
+========================
+8. SYSTEM BEHAVIOR RULE
+
+This layer must:
+- NOT break existing signal flow
+- ONLY enrich ABF decision context
+- NEVER replace market-data layer
+
+========================
+FINAL GOAL
+
+Make GTPro feel like a professional trading terminal where:
+
+- price alone is NOT enough
+- liquidity zones influence every decision
+- order flow determines signal confidence
+- execution reacts to market microstructure
+
+END.

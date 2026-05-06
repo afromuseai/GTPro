@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "GTPro"
+version = "1.0.0"
+id = "artifacts/gtpro"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22417
+
+[services.development]
+run = "pnpm --filter @workspace/gtpro run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gtpro", "run", "build" ]
+publicDir = "artifacts/gtpro/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22417"
+BASE_PATH = "/"

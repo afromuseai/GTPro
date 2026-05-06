@@ -1,0 +1,141 @@
+
+Upgrade GTPro by adding a SELF-IMPROVING TRADE FEEDBACK & MEMORY SYSTEM.
+
+DO NOT remove or rewrite existing systems:
+- ABF / SBF / VCBF fleets
+- liquidity engine
+- market data layer
+- execution system
+- UI dashboard
+
+This is an ADDITIVE intelligence layer only.
+
+========================
+1. NEW MODULE: /engine/learning/
+========================
+
+Create a Trade Learning Engine that stores and evaluates outcomes.
+
+For every executed signal, store:
+
+{
+  tradeId,
+  botId,
+  symbol,
+  signalType (BUY/SELL),
+  entryPrice,
+  exitPrice,
+  pnl,
+  duration,
+  liquidityContext,
+  volatilityContext,
+  confidenceAtEntry
+}
+
+========================
+2. OUTCOME EVALUATION SYSTEM
+========================
+
+After each trade closes:
+
+Calculate:
+- win/loss
+- ROI %
+- signal accuracy score
+- liquidity effectiveness score
+
+Derive:
+- “what worked”
+- “what failed”
+
+========================
+3. ADAPTIVE CONFIDENCE ENGINE (CORE UPGRADE)
+========================
+
+Modify ABF signal generation:
+
+Add a MEMORY WEIGHT factor:
+
+If past trades under similar conditions:
+- performed well → increase confidence weighting
+- performed poorly → reduce confidence weighting
+
+Conditions include:
+- volatility regime
+- liquidity state
+- sweep/absorption context
+- trend direction
+
+========================
+4. STRATEGY PERFORMANCE TRACKING
+========================
+
+Track performance per strategy:
+
+- Sweep & Reclaim
+- Absorption Reversal
+- Void-Fill Logic
+
+For each strategy store:
+- win rate
+- avg pnl
+- drawdown
+- reliability score
+
+Expose this in UI under "Strategy Performance"
+
+========================
+5. MEMORY-DRIVEN SIGNAL ENHANCEMENT
+
+Before sending ABF request to AI:
+
+Attach:
+- last 20 similar market conditions outcomes
+- success rate of current strategy in similar conditions
+- historical confidence adjustment factor
+
+AI prompt must now include:
+
+"Adjust recommendation based on historical performance context."
+
+========================
+6. FRONTEND UPGRADE
+
+Add new "Performance Memory Panel":
+
+Show:
+- win rate over time
+- best performing strategy
+- worst performing conditions
+- equity curve (simple line chart)
+- recent trade outcomes
+
+========================
+7. ABF LOG ENHANCEMENT
+
+Add learning-aware logs:
+
+Examples:
+- "Pattern match detected: Sweep + Absorption historically 72% success → confidence boosted"
+- "Strategy underperformance detected in high volatility → reducing exposure bias"
+- "Learning update applied: Void-Fill strategy improved weighting"
+
+========================
+8. SYSTEM BEHAVIOR RULE
+
+The system must:
+- evolve confidence over time
+- never reset learning state
+- continuously improve weighting logic
+
+If no historical data exists:
+- default to neutral weights
+
+========================
+FINAL GOAL
+
+Transform GTPro into:
+
+"A self-learning trading intelligence system that improves signal quality based on historical trade outcomes and evolving market conditions."
+
+END.

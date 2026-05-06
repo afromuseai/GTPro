@@ -1,0 +1,197 @@
+Upgrade GTPro with first-time user activation flow + legal system (Terms of Service + Privacy Policy).
+
+GOAL:
+- Guide users from onboarding → deposit → first bot launch
+- Establish legal trust with full Terms & Privacy pages
+- Make product feel production-ready and compliant
+
+--------------------------------------------------
+
+1. FIRST DEPOSIT FLOW (POST-ONBOARDING)
+
+Trigger:
+- After onboarding completion
+- OR when balance = 0
+
+Create Deposit Modal:
+
+Title:
+"Activate Your System"
+
+Text:
+"Deposit credits to start running AI trading bots."
+
+Options:
+- $10 (Starter)
+- $25 (Recommended)
+- $50 (Advanced)
+
+Button:
+"Add Credits"
+
+Backend:
+POST /api/wallet/deposit
+→ simulate success
+→ update user.balance
+
+After success:
+→ show success state:
+"Credits Added — Ready to Launch"
+
+--------------------------------------------------
+
+2. GUIDED FIRST BOT LAUNCH (WOW MOMENT)
+
+Immediately after deposit:
+
+Step-by-step guided overlay:
+
+Step 1:
+"Select Strategy"
+→ highlight strategy cards
+
+Step 2:
+"Choose Duration"
+→ highlight duration buttons
+
+Step 3:
+"Launch Your First Bot"
+→ highlight launch button
+
+On launch:
+- animate transition
+- show bot activation state
+- trigger activity logs instantly
+
+Add message:
+"Your system is now active"
+
+--------------------------------------------------
+
+3. TERMS OF SERVICE PAGE
+
+Route:
+/terms
+
+Content:
+
+Title:
+"Terms of Service — GTPro"
+
+Sections:
+
+1. Overview
+"GTPro is a trading intelligence and automation platform providing simulated analysis and execution tools."
+
+2. Service Usage
+- Users deposit funds as service credits
+- Credits are used for accessing platform features
+- Credits are non-withdrawable
+
+3. No Financial Services
+- GTPro does not provide financial advice
+- GTPro does not execute real trades on behalf of users
+- All performance metrics are simulated
+
+4. User Responsibility
+- Users are responsible for how they interpret system outputs
+- GTPro is not liable for financial decisions made outside the platform
+
+5. Account Usage
+- Users must provide valid information
+- Abuse or exploitation leads to suspension
+
+6. Modifications
+- GTPro may update features and pricing
+
+7. Acceptance
+"By using GTPro, you agree to these terms"
+
+--------------------------------------------------
+
+4. PRIVACY POLICY PAGE
+
+Route:
+/privacy
+
+Content:
+
+Title:
+"Privacy Policy — GTPro"
+
+Sections:
+
+1. Data Collected
+- Email and account info
+- Usage activity (bots, sessions)
+- Device/session data
+
+2. How Data Is Used
+- Improve system performance
+- Personalize experience
+- Maintain security
+
+3. Data Protection
+- Data stored securely
+- No sale of personal data
+
+4. Third Parties
+- May use infrastructure providers (hosting, auth)
+
+5. User Rights
+- Users can request account deletion
+
+6. Cookies / Sessions
+- Used for authentication and experience
+
+7. Updates
+- Policy may evolve over time
+
+--------------------------------------------------
+
+5. LEGAL UI INTEGRATION
+
+Add to:
+
+Navbar (footer or dropdown):
+- Terms of Service
+- Privacy Policy
+
+Signup Page:
+Checkbox:
+
+[ ] "I agree to the Terms of Service and Privacy Policy"
+
+→ required before account creation
+
+Link both pages
+
+--------------------------------------------------
+
+6. TRUST ELEMENTS (IMPORTANT)
+
+Add small footer line:
+
+"Service-based platform • No withdrawals • Simulated performance"
+
+Add subtle lock icon + "Secure System" label in UI
+
+--------------------------------------------------
+
+7. UX REQUIREMENTS
+
+- clean, readable pages
+- premium typography
+- dark theme with gold accents
+- mobile responsive
+
+--------------------------------------------------
+
+OUTPUT:
+
+A complete user activation + legal system including:
+- deposit onboarding
+- first bot guided launch
+- full Terms of Service page
+- full Privacy Policy page
+- UI integration for trust and compliance

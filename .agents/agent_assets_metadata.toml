@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "O2X5wPtlZtlJX74hAxx3_"
+uri = "file://artifacts/gtpro/public/hero-fallback.png"
+type = "image"
+title = "hero_fallback"
+
+[[generated]]
+id = "H_XUHf-IQmt55cPHGyoJ5"
+uri = "file://artifacts/gtpro/public/ai-assistant-avatar.png"
+type = "image"
+title = "AI assistant woman profile picture"

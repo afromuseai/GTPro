@@ -1,0 +1,148 @@
+Upgrade GTPro billing system to a NON-WITHDRAWABLE, SERVICE-BASED CREDIT MODEL.
+
+GOAL:
+Users deposit funds ONLY to access services (bot execution, AI analysis).
+NO withdrawals. NO real profit payouts. All profit is SIMULATED for performance display only.
+
+--------------------------------------------------
+
+1. CORE RULES
+
+- User balance = service credits ONLY
+- Balance can ONLY decrease (usage)
+- NO withdrawal system anywhere
+- Profit is NOT real money → simulation only
+
+--------------------------------------------------
+
+2. DATABASE UPDATE
+
+Update users table:
+
+users:
+- id
+- email
+- balance (float) → service credits
+- locked_balance (float)
+- total_spent (float)
+- total_simulated_profit (float)
+- billing_plan (free | weekly | monthly)
+- plan_expiry (timestamp)
+- included_hours (float)
+- used_hours (float)
+
+--------------------------------------------------
+
+3. REMOVE REAL PROFIT LOGIC
+
+- REMOVE any logic that adds profit to user.balance
+
+REPLACE WITH:
+
+On bot session end:
+
+user.total_simulated_profit += profit
+
+DO NOT modify user.balance
+
+--------------------------------------------------
+
+4. BOT EXECUTION BILLING
+
+When user starts bot:
+
+- Calculate estimated_cost = duration * hourly_rate
+
+IF user.balance < estimated_cost:
+    reject execution
+
+ELSE:
+    lock funds:
+        user.balance -= estimated_cost
+        user.locked_balance += estimated_cost
+
+--------------------------------------------------
+
+5. REAL-TIME COST CONSUMPTION
+
+Every tick:
+
+- deduct cost from locked_balance
+- add to total_spent
+
+--------------------------------------------------
+
+6. SESSION END
+
+- release unused locked_balance back to balance
+- finalize total_spent
+
+--------------------------------------------------
+
+7. WALLET SYSTEM
+
+POST /api/wallet/deposit
+
+- simulate deposit success
+- increase user.balance
+
+NO withdrawal endpoint should exist
+
+--------------------------------------------------
+
+8. DASHBOARD UI
+
+Add Wallet Panel:
+
+- Balance (label: "Service Credits")
+- Locked Credits
+- Total Spent
+- Simulated Profit (NOT earnings)
+
+--------------------------------------------------
+
+9. PROFIT DISPLAY (IMPORTANT)
+
+Rename everywhere:
+
+"Profit" → "Simulated Performance"
+"PnL" → "Performance Outcome"
+
+--------------------------------------------------
+
+10. DISCLAIMER SYSTEM (MANDATORY)
+
+Add global banner + footer text:
+
+"GTPro is a trading intelligence and automation platform.
+Funds are used for accessing services and are not withdrawable.
+All performance metrics are simulated."
+
+--------------------------------------------------
+
+11. TRANSACTION HISTORY
+
+Show:
+
+- deposits
+- usage deductions
+
+NO profit payouts listed as money
+
+--------------------------------------------------
+
+12. UX RULES
+
+- smooth updates (no reloads)
+- premium fintech UI
+- clear labels to avoid confusion
+
+--------------------------------------------------
+
+OUTPUT:
+
+A complete service-based billing system where:
+- users pay for usage
+- no withdrawals exist
+- profit is simulated only
+- system remains realistic and premium

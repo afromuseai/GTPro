@@ -1,0 +1,59 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Clip everything to the hexagon outline -->
+    <clipPath id="hexClip">
+      <polygon points="90,7 161,48 161,132 90,173 19,132 19,48"/>
+    </clipPath>
+    <!-- Clip globe lines to circle -->
+    <clipPath id="globeClip">
+      <circle cx="90" cy="83" r="32"/>
+    </clipPath>
+  </defs>
+
+  <!-- Hexagon background fill — clipped to hex -->
+  <polygon points="90,7 161,48 161,132 90,173 19,132 19,48"
+    fill="#0D1221" clip-path="url(#hexClip)"/>
+
+  <!-- Subtle radial glow inside -->
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#D4AF37" stop-opacity="0.08"/>
+    <stop offset="100%" stop-color="#D4AF37" stop-opacity="0"/>
+  </radialGradient>
+  <polygon points="90,7 161,48 161,132 90,173 19,132 19,48"
+    fill="url(#glow)" clip-path="url(#hexClip)"/>
+
+  <!-- Outer hexagon border -->
+  <polygon points="90,7 161,48 161,132 90,173 19,132 19,48"
+    fill="none" stroke="#D4AF37" stroke-width="3" clip-path="url(#hexClip)"/>
+
+  <!-- Inner hexagon border (inset ~14px) -->
+  <polygon points="90,21 148.8,55.5 148.8,124.5 90,159 31.2,124.5 31.2,55.5"
+    fill="none" stroke="#D4AF37" stroke-width="1" stroke-opacity="0.45" clip-path="url(#hexClip)"/>
+
+  <!-- Connecting lines from inner hex to outer corners (subtle) -->
+  <line x1="90" y1="7"   x2="90"    y2="21"    stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="161" y1="48" x2="148.8" y2="55.5"  stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="161" y1="132" x2="148.8" y2="124.5" stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="90"  y1="173" x2="90"   y2="159"   stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="19"  y1="132" x2="31.2" y2="124.5" stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="19"  y1="48"  x2="31.2" y2="55.5"  stroke="#D4AF37" stroke-width="1" stroke-opacity="0.3"/>
+
+  <!-- Dot at top vertex -->
+  <circle cx="90" cy="7" r="3.5" fill="#D4AF37"/>
+
+  <!-- Globe circle -->
+  <circle cx="90" cy="83" r="32" fill="none" stroke="#D4AF37" stroke-width="1.5"/>
+
+  <!-- Globe horizontal bands — clipped to circle -->
+  <line x1="58" y1="73" x2="122" y2="73" stroke="#D4AF37" stroke-width="1.2" stroke-opacity="0.6" clip-path="url(#globeClip)"/>
+  <line x1="58" y1="83" x2="122" y2="83" stroke="#D4AF37" stroke-width="1.2" stroke-opacity="0.6" clip-path="url(#globeClip)"/>
+  <line x1="58" y1="93" x2="122" y2="93" stroke="#D4AF37" stroke-width="1.2" stroke-opacity="0.6" clip-path="url(#globeClip)"/>
+
+  <!-- Globe vertical ellipse arc -->
+  <ellipse cx="90" cy="83" rx="13" ry="32" fill="none" stroke="#D4AF37" stroke-width="1" stroke-opacity="0.5" clip-path="url(#globeClip)"/>
+
+  <!-- GT label -->
+  <text x="90" y="150" text-anchor="middle"
+    fill="#D4AF37" font-family="'Inter', 'Helvetica Neue', sans-serif"
+    font-size="15" font-weight="700" letter-spacing="4">GT</text>
+</svg>

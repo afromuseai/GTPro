@@ -1,0 +1,160 @@
+
+Upgrade the GTPro landing page hero section into a PREMIUM CINEMATIC FINTECH EXPERIENCE.
+
+Do NOT ask for asset selection.
+Choose and implement the best royalty-free assets automatically.
+
+Maintain:
+- GTPro dark navy + gold design system
+- Existing landing page structure
+- Existing routing/auth
+
+This is a visual premium upgrade only.
+
+====================================
+1. HERO BACKGROUND ASSET
+====================================
+
+Select and implement a premium trading-themed background.
+
+Priority order:
+
+OPTION 1 (preferred):
+A dark looping trading-market video background
+
+Requirements:
+- dark navy / black dominant
+- subtle candlestick or market motion
+- slow movement
+- cinematic
+- premium institutional trading aesthetic
+- no distracting bright flashes
+- no people
+- no meme/crypto hype visuals
+
+OPTION 2 (fallback):
+High-resolution static dark trading intelligence image
+
+Must feel:
+Bloomberg terminal × AI intelligence platform
+
+====================================
+2. VIDEO IMPLEMENTATION
+====================================
+
+If video is used:
+
+- autoplay
+- muted
+- loop
+- object-cover
+- full hero coverage
+- lazy loaded
+- optimized for performance
+- desktop only if needed
+
+Mobile:
+automatically switch to static fallback image
+
+====================================
+3. CINEMATIC OVERLAY
+====================================
+
+Apply layered overlays:
+
+Layer 1:
+Dark gradient
+
+rgba(10,14,26,0.82)
+to
+rgba(10,14,26,0.95)
+
+Layer 2:
+Soft radial gold ambient glow
+
+Layer 3:
+Subtle vignette edge darkening
+
+Goal:
+maximum text readability + premium atmosphere
+
+====================================
+4. PREMIUM MOTION
+====================================
+
+Add subtle animation:
+
+Background:
+slow zoom (20–30s loop)
+
+Hero content:
+staggered fade-up entrance
+
+CTA:
+soft pulse glow
+
+Add a LIVE system indicator:
+green pulsing dot + "LIVE SYSTEM ACTIVE"
+
+====================================
+5. ADVANCED VISUAL EFFECTS
+====================================
+
+Add subtle floating particle/data effects:
+
+- low opacity
+- slow movement
+- gold / blue / faint white
+- extremely refined
+
+Should feel like:
+active intelligence system
+
+NOT:
+cheap particle animation
+
+====================================
+6. HERO REFINEMENT
+====================================
+
+Enhance headline presentation:
+
+Add soft blurred glow behind:
+
+"Command the Markets with AI Intelligence"
+
+Gold-purple ambient accent
+
+Increase perceived depth
+
+====================================
+7. PERFORMANCE REQUIREMENTS
+====================================
+
+Optimize heavily:
+
+- no lag
+- compressed assets
+- maintain Lighthouse performance
+- preserve responsiveness
+
+====================================
+8. FINAL EXPERIENCE GOAL
+====================================
+
+The landing page should feel like:
+
+a premium institutional AI trading platform worth $100M+
+
+Visual references:
+- Stripe
+- Linear
+- Ramp
+- Bloomberg terminal aesthetic
+- high-end quant trading UI
+
+When a user lands on GTPro, the immediate reaction should be:
+
+"This feels expensive, intelligent, and real."
+
+END

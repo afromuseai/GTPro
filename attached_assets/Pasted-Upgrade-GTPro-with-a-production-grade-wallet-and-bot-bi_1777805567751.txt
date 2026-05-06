@@ -1,0 +1,143 @@
+Upgrade GTPro with a production-grade wallet and bot billing system.
+
+GOAL:
+Implement deposit-based consumption billing tied to bot execution sessions.
+
+---------------------------------------
+
+1. DATABASE SCHEMA
+
+users:
+- id
+- email
+- balance (float)
+- locked_balance (float)
+- total_spent (float)
+- total_profit (float)
+
+bot_sessions:
+- id
+- user_id
+- strategy
+- duration_hours
+- start_time
+- end_time
+- status (running | paused | completed)
+- hourly_rate
+- total_cost
+- profit_generated
+
+transactions:
+- id
+- user_id
+- type (deposit | usage | profit | refund)
+- amount
+- status
+- created_at
+
+---------------------------------------
+
+2. DEPOSIT SYSTEM
+
+- Users can deposit:
+  - Min: $10
+  - Max: $500
+
+- Simulate payment success (no real Stripe needed for now)
+
+POST /api/wallet/deposit
+→ adds balance
+
+---------------------------------------
+
+3. BOT BILLING LOGIC
+
+When user starts a bot:
+
+- Calculate:
+  hourly_rate = 1.8 USD (configurable)
+  estimated_cost = duration * hourly_rate
+
+- Check:
+  IF balance < estimated_cost → reject
+
+- Lock funds:
+  balance -= estimated_cost
+  locked_balance += estimated_cost
+
+---------------------------------------
+
+4. REAL-TIME COST DEDUCTION
+
+Every tick (4–5 seconds):
+
+- Calculate elapsed time
+- Deduct proportional cost from locked_balance
+- Move to total_spent
+
+---------------------------------------
+
+5. SESSION END
+
+When bot stops or expires:
+
+- Release unused locked_balance back to user
+- Record final cost
+- Apply profit simulation
+
+---------------------------------------
+
+6. PROFIT SYSTEM (SIMULATION)
+
+- Each session generates:
+  profit = random weighted outcome (based on strategy + trend)
+
+- Add:
+  user.balance += profit
+  user.total_profit += profit
+
+---------------------------------------
+
+7. DASHBOARD UI
+
+Add Wallet Panel:
+
+- Balance
+- Locked Balance
+- Total Profit
+
+Add Bot Cost Panel:
+
+- Running cost
+- Remaining time
+- Estimated final cost
+
+---------------------------------------
+
+8. TRANSACTION HISTORY
+
+Add table showing:
+- deposits
+- usage
+- profits
+
+---------------------------------------
+
+9. SAFETY RULES
+
+- Cannot start bot if funds insufficient
+- Cannot withdraw locked funds
+- All calculations server-side only
+
+---------------------------------------
+
+10. UX
+
+- smooth updates
+- no reload
+- premium fintech feel
+
+---------------------------------------
+
+OUTPUT:
+Full working wallet system with bot billing, session locking, live cost tracking, and transaction history.

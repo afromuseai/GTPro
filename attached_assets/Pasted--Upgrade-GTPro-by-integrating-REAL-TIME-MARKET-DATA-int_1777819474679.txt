@@ -1,0 +1,142 @@
+
+Upgrade GTPro by integrating REAL-TIME MARKET DATA into the existing Agent Bot Fleet (ABF) system.
+
+IMPORTANT RULES:
+- DO NOT remove existing fleets, UI, or execution system
+- DO NOT break current simulation logic
+- EXTEND ABF only
+- SBF and VCBF remain unchanged
+
+========================
+1. MARKET DATA LAYER (NEW)
+========================
+
+Add a new service:
+
+/engine/market-data/
+
+Implement a market feed module that supports:
+
+PRIMARY OPTION:
+- Binance WebSocket (BTC/USDT, ETH/USDT)
+
+FALLBACK OPTION:
+- Simulated market stream (random walk model)
+
+Market data must include:
+- price
+- volume
+- timestamp
+- bid/ask spread (simulated if needed)
+
+Ensure system NEVER breaks if real feed fails.
+
+========================
+2. ABF UPGRADE (CRITICAL)
+========================
+
+Modify Agent Bot Fleet (ABF):
+
+Replace fake/random inputs with:
+
+- real market snapshot every 15–60 seconds
+- or fallback simulated market snapshot
+
+ABF pipeline becomes:
+
+Market Data → ABF Engine → AI Model → Signal → UI
+
+========================
+3. AI MODEL INTEGRATION (STRICT ROUTING)
+========================
+
+Ensure correct model usage:
+
+- ALL trading analysis MUST use:
+  nemotron-ocr-v1 (or fallback logic if unavailable)
+
+- NEVER use chat model for trading decisions
+
+Input to model:
+- price movement
+- short history window (last 20–50 ticks)
+- volatility snapshot
+
+Output must remain:
+
+{
+  signal: BUY | SELL | HOLD,
+  confidence: number,
+  reasoning: string,
+  strategy: string
+}
+
+========================
+4. SIGNAL REALISM UPGRADE
+========================
+
+Improve ABF signals:
+
+- tie signals to actual price movement direction
+- increase confidence when trend is strong
+- reduce confidence during sideways markets
+- simulate liquidity sweeps based on volatility spikes
+
+Make system feel reactive, not random.
+
+========================
+5. REAL-TIME CONSISTENCY RULE
+========================
+
+Ensure:
+- signals reflect recent price movement
+- logs match actual market behavior
+- PnL simulation reacts to price direction
+
+NO disconnected randomness.
+
+========================
+6. EXECUTION ENGINE ADJUSTMENT
+========================
+
+Keep current system but improve realism:
+
+- trade PnL should reference actual price movement
+- slippage simulation based on volatility
+- execution delay (200ms–1200ms simulated)
+
+========================
+7. DASHBOARD UPGRADE
+========================
+
+Add:
+
+- small live price ticker (BTC/USDT)
+- mini sparkline chart (last 30 data points)
+- signal overlay indicator (BUY/SELL/HOLD)
+
+========================
+8. SYSTEM RESILIENCE
+========================
+
+If Binance feed fails:
+- switch to simulated market instantly
+- show "DATA MODE: SIMULATED" in UI
+
+If AI fails:
+- fallback to deterministic signal logic
+
+System must NEVER crash.
+
+========================
+FINAL GOAL
+========================
+
+Transform GTPro ABF into a REAL-TIME MARKET DRIVEN AI ENGINE where:
+
+- signals react to live price movement
+- bots behave like real trading agents
+- UI reflects actual market conditions
+- system remains stable under failure
+
+END.

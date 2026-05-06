@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: GTPro Trading Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: dashboard
+    description: Dashboard operations
+  - name: user
+    description: User operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      description: Returns key stats for the dashboard (balance, active bots, P&L)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "401":
+          description: Unauthorized
+
+  /user/profile:
+    get:
+      operationId: getUserProfile
+      tags: [user]
+      summary: Get user profile
+      description: Returns the authenticated user's profile data
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+
+  /user/linked-accounts:
+    get:
+      operationId: getLinkedAccounts
+      tags: [user]
+      summary: Get linked exchange accounts
+      description: Returns the list of linked broker/exchange accounts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of linked accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinkedAccount"
+        "401":
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    DashboardStats:
+      type: object
+      properties:
+        balance:
+          type: number
+          description: Total portfolio balance in USD
+        activeBots:
+          type: integer
+          description: Number of active trading bots
+        pnlToday:
+          type: number
+          description: Profit and loss for today in USD
+        pnlTodayPercent:
+          type: number
+          description: P&L percentage change for today
+        totalPnl:
+          type: number
+          description: All-time total P&L
+      required:
+        - balance
+        - activeBots
+        - pnlToday
+        - pnlTodayPercent
+        - totalPnl
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - email
+        - displayName
+        - createdAt
+
+    LinkedAccount:
+      type: object
+      properties:
+        id:
+          type: string
+        exchange:
+          type: string
+          description: Exchange name (e.g. Binance, Coinbase)
+        label:
+          type: string
+        status:
+          type: string
+          enum: [connected, disconnected, error]
+        balance:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - exchange
+        - label
+        - status
+        - createdAt

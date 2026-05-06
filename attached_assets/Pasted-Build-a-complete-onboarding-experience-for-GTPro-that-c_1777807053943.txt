@@ -1,0 +1,167 @@
+Build a complete onboarding experience for GTPro that clearly explains the platform, billing model, and usage before users access the dashboard.
+
+GOAL:
+Ensure users understand:
+- GTPro is a service-based AI trading intelligence platform
+- Deposits are service credits (non-withdrawable)
+- Performance metrics are simulated
+- Users pay for bot execution and analysis
+
+--------------------------------------------------
+
+1. ONBOARDING FLOW STRUCTURE
+
+Create a multi-step onboarding modal/wizard that appears:
+
+- First login
+- OR if user.has_completed_onboarding = false
+
+Steps:
+
+Step 1: Welcome
+Step 2: How GTPro Works
+Step 3: Billing & Credits
+Step 4: Simulation Transparency
+Step 5: Confirmation
+
+--------------------------------------------------
+
+2. STEP CONTENT
+
+STEP 1 — WELCOME
+
+Title:
+"Welcome to GTPro"
+
+Text:
+"Command intelligent trading systems powered by AI-driven analysis, execution simulation, and continuous optimization."
+
+CTA:
+"Continue"
+
+--------------------------------------------------
+
+STEP 2 — HOW IT WORKS
+
+Title:
+"How GTPro Works"
+
+Show 3 cards:
+
+1. AI Analysis
+"Bot fleets analyze market conditions and generate signals."
+
+2. Execution Simulation
+"Trades are executed in a controlled simulation environment."
+
+3. Continuous Learning
+"The system adapts and improves using performance feedback."
+
+CTA:
+"Continue"
+
+--------------------------------------------------
+
+STEP 3 — BILLING & CREDITS
+
+Title:
+"Service-Based Credits"
+
+Text:
+"GTPro uses a credit-based system. You deposit funds to access services like bot execution and AI analysis."
+
+Highlight box:
+
+- Credits are used for system operations
+- Credits decrease based on usage
+- No subscription required (unless user upgrades)
+
+CTA:
+"Continue"
+
+--------------------------------------------------
+
+STEP 4 — IMPORTANT TRANSPARENCY
+
+Title:
+"Simulation & Usage Policy"
+
+Display clearly:
+
+- "Funds are NOT withdrawable"
+- "All trading performance is simulated"
+- "GTPro does not hold or trade real assets on your behalf"
+
+Style:
+- warning card (subtle gold/red accent, not aggressive)
+
+CTA:
+"I Understand"
+
+--------------------------------------------------
+
+STEP 5 — CONFIRMATION
+
+Checkbox (required):
+
+[ ] "I understand that GTPro is a service-based platform and credits are non-withdrawable"
+
+CTA:
+"Enter Dashboard" (disabled until checked)
+
+--------------------------------------------------
+
+3. DATABASE
+
+Add to users table:
+
+- has_completed_onboarding (boolean, default false)
+
+On completion:
+set to true
+
+--------------------------------------------------
+
+4. UI REQUIREMENTS
+
+- centered modal or full-screen overlay
+- glassmorphism + gold accents (match GTPro theme)
+- smooth transitions between steps
+- progress indicator (Step 1/5, 2/5…)
+
+--------------------------------------------------
+
+5. ACCESS CONTROL
+
+- block dashboard interaction until onboarding is completed
+- allow skip ONLY in dev mode
+
+--------------------------------------------------
+
+6. OPTIONAL (HIGH VALUE)
+
+Add small line at bottom:
+
+"Start with a demo balance to explore the system"
+
+(only if demo credits exist)
+
+--------------------------------------------------
+
+7. UX TONE
+
+- premium
+- clear
+- confident
+- NOT legal-heavy
+- NOT scary
+
+--------------------------------------------------
+
+OUTPUT:
+
+A polished onboarding system that:
+- educates users
+- builds trust
+- prevents confusion about billing and simulation
+- feels like a premium fintech product

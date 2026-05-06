@@ -1,0 +1,200 @@
+
+You are continuing an existing codebase called GTPro. DO NOT restart the project. DO NOT remove existing UI, auth, or bot logic unless required for integration.
+
+Your task is to finalize GTPro into a production-grade AI trading intelligence platform with bot fleets, real-time AI analysis, and controlled execution.
+
+========================
+CORE PRODUCT DEFINITION
+========================
+
+GTPro is an AI-powered trading intelligence system with 3 continuous bot fleets:
+
+1. Security Bot Fleet (SBF)
+2. Vulnerability Check Bot Fleet (VCBF)
+3. Agent Bot Fleet (ABF)
+
+All fleets must run continuously in the background (24/7 simulation mode is acceptable for now).
+
+Users control ONLY:
+- starting/stopping bot sessions
+- selecting strategy
+- setting duration
+- enabling/disabling auto-execution mode
+
+Bots NEVER stop thinking unless user stops session.
+
+========================
+1. AGENT BOT FLEET (ABF) — CORE ENGINE
+========================
+
+Implement ABF as a continuous async loop per active user session:
+
+Every 15–60 seconds:
+- Fetch simulated or real market snapshot
+- Send data to AI model (nemotron-ocr-v1 or fallback simulation if unavailable)
+- Receive:
+  - signal (BUY / SELL / HOLD)
+  - confidence score (0–100)
+  - reasoning text
+  - strategy alignment
+
+Store each signal in database and stream to frontend via WebSocket.
+
+ABF must:
+- run per user session
+- support multiple bots (one per linked account)
+- never block UI
+- always log decisions
+
+========================
+2. SECURITY BOT FLEET (SBF)
+========================
+
+Implement continuous monitoring system:
+
+Responsibilities:
+- Monitor login sessions
+- Detect suspicious API usage patterns
+- Validate authentication integrity
+- Track session anomalies
+
+Output:
+- security logs
+- alerts (non-blocking unless critical)
+
+SBF runs globally, not per bot.
+
+========================
+3. VULNERABILITY CHECK BOT FLEET (VCBF)
+========================
+
+Implement system-level watchdog:
+
+Responsibilities:
+- Scan logs for abnormal patterns
+- Detect execution inconsistencies
+- Flag risk conditions
+- Report to admin/system logs
+
+VCBF runs continuously and independently.
+
+========================
+4. EXECUTION SYSTEM (CRITICAL DESIGN)
+========================
+
+DO NOT execute trades automatically without mode check.
+
+Two execution modes:
+
+A) MANUAL MODE (DEFAULT)
+- ABF generates signal
+- User must click "Execute Trade"
+
+B) AUTO MODE (OPTIONAL USER ENABLED)
+- User enables risk-controlled automation
+- System executes trades automatically within:
+  - max risk per trade
+  - max daily loss
+  - strategy constraints
+
+Execution engine must:
+- log all actions
+- respect risk limits
+- simulate execution for now (no real broker integration required yet)
+
+========================
+5. REAL-TIME SIGNAL ENGINE
+========================
+
+Implement signal stream system:
+
+Frontend must receive live updates:
+- signal type
+- confidence
+- strategy
+- explanation
+- timestamp
+
+Use WebSockets or equivalent real-time mechanism.
+
+Signals update every 15–60 seconds per active bot session.
+
+========================
+6. DATABASE REQUIREMENTS
+========================
+
+Ensure persistence for:
+
+- users
+- bot sessions
+- signals
+- logs
+- execution history
+- linked accounts
+
+Every signal and execution must be stored.
+
+========================
+7. FRONTEND REQUIREMENTS
+========================
+
+Ensure UI supports:
+
+Dashboard:
+- Active bot cards
+- Live PnL simulation
+- Strategy display
+- Timer countdown
+
+Analysis Page:
+- Live AI signal feed
+- Explanation of reasoning
+- Confidence visualization
+
+Linked Accounts:
+- Broker connection UI
+- Status indicators
+- Security badges
+
+Logs Panel:
+- Real-time updates
+- Color-coded events
+
+========================
+8. AI INTEGRATION
+========================
+
+Use AI model calls (or simulated fallback):
+
+- nemotron-ocr-v1 for analysis
+- llama-3.2-3b-instruct for explanations/chat
+
+If AI fails:
+- fallback to deterministic simulation logic
+- system must never break
+
+========================
+9. SYSTEM RULES
+========================
+
+- DO NOT remove existing UI structure
+- DO NOT break auth (Clerk already implemented)
+- DO NOT simplify fleets
+- DO NOT convert to single-bot system
+- KEEP continuous execution model
+
+Everything must feel:
+- live
+- reactive
+- intelligent
+- always running
+
+========================
+FINAL GOAL
+========================
+
+GTPro must feel like:
+
+"A 24/7 AI trading intelligence system where autonomous fleets continuously analyze markets, generate signals, and assist users in executing controlled trading decisions in real time."
+
+END.
