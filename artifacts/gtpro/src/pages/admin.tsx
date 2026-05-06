@@ -77,15 +77,26 @@ interface AdminUser {
   note: string | null;
 }
 
+const PLANS = ["all", "free", "starter", "pro", "enterprise"] as const;
+type PlanFilter = typeof PLANS[number];
+
+const PLAN_COLORS: Record<string, string> = {
+  free:       "border-white/[0.1] text-muted-foreground/60",
+  starter:    "border-blue-400/30 text-blue-400",
+  pro:        "border-primary/30 text-primary",
+  enterprise: "border-violet-400/30 text-violet-400",
+};
+
 function UsersTab() {
   const { getToken } = useAuth();
-  const [users, setUsers]     = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState("");
-  const [editing, setEditing] = useState<number | null>(null);
-  const [draft, setDraft]     = useState<Partial<AdminUser>>({});
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [users, setUsers]       = useState<AdminUser[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState("");
+  const [planFilter, setPlanFilter] = useState<PlanFilter>("all");
+  const [editing, setEditing]   = useState<number | null>(null);
+  const [draft, setDraft]       = useState<Partial<AdminUser>>({});
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
 
   async function authHeaders(): Promise<Record<string, string>> {
     try {
@@ -139,10 +150,13 @@ function UsersTab() {
     }
   }
 
-  const filtered = users.filter(u =>
-    u.email.toLowerCase().includes(search.toLowerCase()) ||
-    u.clerkId.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = users.filter(u => {
+    const matchSearch = search === "" ||
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      u.clerkId.toLowerCase().includes(search.toLowerCase());
+    const matchPlan = planFilter === "all" || u.billingPlan === planFilter;
+    return matchSearch && matchPlan;
+  });
 
   return (
     <div className="space-y-6">
@@ -157,15 +171,43 @@ function UsersTab() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by email or Clerk ID…"
-          className="w-full pl-8 pr-4 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] text-[13px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 transition-colors"
-        />
+      {/* Search + Plan filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by email or Clerk ID…"
+            className="w-full pl-8 pr-4 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] text-[13px] placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 transition-colors"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 p-1 rounded-xl border border-white/[0.07] bg-white/[0.02] shrink-0">
+          {PLANS.map(plan => {
+            const active = planFilter === plan;
+            const colorCls = plan === "all" ? "text-foreground" : PLAN_COLORS[plan] ?? "text-muted-foreground/60";
+            return (
+              <button
+                key={plan}
+                onClick={() => setPlanFilter(plan)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  active
+                    ? plan === "all"
+                      ? "bg-white/[0.08] text-foreground"
+                      : `bg-white/[0.06] border ${PLAN_COLORS[plan] ?? "border-white/[0.1]"}`
+                    : `hover:bg-white/[0.04] text-muted-foreground/40 hover:text-muted-foreground/70`
+                }`}
+              >
+                {plan === "all" ? "All" : plan}
+                {plan !== "all" && (
+                  <span className="ml-1 opacity-60">
+                    {users.filter(u => u.billingPlan === plan).length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {error && (

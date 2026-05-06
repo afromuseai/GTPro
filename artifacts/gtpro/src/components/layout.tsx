@@ -240,7 +240,7 @@ function NotificationBell() {
   }, [open, setOpen]);
 
   return (
-    <div className="relative" ref={bellRef}>
+    <div className="relative z-[100]" ref={bellRef}>
       <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.93 }} transition={{ duration: 0.15 }}>
         <Button
           variant="ghost"
@@ -496,7 +496,7 @@ export function AppLayout({ children, devMode }: { children: React.ReactNode; de
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Topbar */}
-        <header className="h-16 flex items-center justify-between px-6 border-b border-white/[0.06] shrink-0"
+        <header className="relative z-50 h-16 flex items-center justify-between px-6 border-b border-white/[0.06] shrink-0"
           style={{ background: "rgba(5, 8, 16, 0.95)", backdropFilter: "blur(20px)" }}>
           <div className="flex items-center gap-4">
             <button className="md:hidden text-muted-foreground hover:text-foreground" onClick={() => setMobileMenuOpen(true)}>

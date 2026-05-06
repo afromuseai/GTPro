@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { getAuth } from "@clerk/express";
+import { getAuth, clerkClient } from "@clerk/express";
 import { db, adminUsers, users } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 
@@ -59,7 +59,9 @@ function requireAdminJwt(req: Parameters<typeof getAuth>[0], res: any, next: any
 }
 
 // ── Clerk-based admin middleware ───────────────────────────────────────────────
-// Used by admin panel routes accessed via Clerk SSO
+// Looks up the Clerk user's primary email directly via clerkClient,
+// then checks that email against the admin_users table.
+// This works even if the admin has never completed platform onboarding.
 
 async function requireClerkAdmin(req: Parameters<typeof getAuth>[0], res: any, next: any) {
   const clerkAuth = getAuth(req);
@@ -68,14 +70,12 @@ async function requireClerkAdmin(req: Parameters<typeof getAuth>[0], res: any, n
     return;
   }
   try {
-    // Look up the platform user by Clerk userId → get their email → check adminUsers
-    const platformUser = await db
-      .select({ email: users.email })
-      .from(users)
-      .where(eq(users.clerkId, clerkAuth.userId))
-      .limit(1);
+    const clerkUser = await clerkClient.users.getUser(clerkAuth.userId);
+    const email = clerkUser.emailAddresses
+      .find(e => e.id === clerkUser.primaryEmailAddressId)
+      ?.emailAddress?.toLowerCase().trim()
+      ?? clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase().trim();
 
-    const email = platformUser[0]?.email?.toLowerCase().trim();
     if (!email) {
       res.status(403).json({ error: "Forbidden" });
       return;
@@ -192,6 +192,7 @@ router.get("/admin/users", requireClerkAdmin, async (req, res) => {
         billingPlan:  users.billingPlan,
         usedHours:    users.usedHours,
         includedHours:users.includedHours,
+        note:         users.note,
         createdAt:    users.createdAt,
         updatedAt:    users.updatedAt,
       })
@@ -204,6 +205,7 @@ router.get("/admin/users", requireClerkAdmin, async (req, res) => {
         balance:       parseFloat((u.balance ?? 0).toString()),
         lockedBalance: parseFloat((u.lockedBalance ?? 0).toString()),
         totalSpent:    parseFloat((u.totalSpent ?? 0).toString()),
+        note:          u.note ?? null,
       }))
     );
   } catch (err) {
@@ -236,13 +238,14 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
     if (!existing) return res.status(404).json({ error: "User not found" });
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (balance      !== undefined) updateData.balance       = balance;
+    if (balance       !== undefined) updateData.balance       = balance;
     if (lockedBalance !== undefined) updateData.lockedBalance = lockedBalance;
     if (billingPlan   !== undefined) updateData.billingPlan   = billingPlan;
+    if (note          !== undefined) updateData.note          = note === "" ? null : note;
 
     const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
 
-    req.log.info({ id, changes: updateData, note }, "Admin updated user");
+    req.log.info({ id, changes: updateData }, "Admin updated user");
     return res.json({
       id:            updated.id,
       email:         updated.email,
@@ -250,6 +253,7 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
       lockedBalance: parseFloat((updated.lockedBalance ?? 0).toString()),
       totalSpent:    parseFloat((updated.totalSpent ?? 0).toString()),
       billingPlan:   updated.billingPlan,
+      note:          updated.note ?? null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update user");

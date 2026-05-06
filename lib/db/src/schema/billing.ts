@@ -14,6 +14,9 @@ export const users = pgTable("users", {
   includedHours:  integer("included_hours").notNull().default(0),
   usedHours:      integer("used_hours").notNull().default(0),
 
+  // Admin note
+  note: text("note"),
+
   // Onboarding
   hasCompletedOnboarding: boolean("has_completed_onboarding").notNull().default(false),
 

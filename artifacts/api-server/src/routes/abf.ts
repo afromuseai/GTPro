@@ -8,6 +8,8 @@ const openai = new OpenAI({
   apiKey:  process.env.NVIDIA_API_KEY ?? "dummy",
 });
 
+const NVIDIA_MODEL = "meta/llama-3.1-70b-instruct";
+
 interface LiquidityZoneInfo {
   type:     string;
   price:    number;
@@ -171,7 +173,7 @@ Respond ONLY with valid JSON matching this exact schema:
   try {
     // Use NVIDIA Llama-3.1-Nemotron-70B via OpenRouter — collect all chunks then parse JSON
     const stream = await openai.chat.completions.create({
-      model: "nvidia/llama-3.1-nemotron-70b-instruct",
+      model: NVIDIA_MODEL,
       max_tokens: 300,
       messages: [
         { role: "system", content: "You are a professional trading AI. Respond ONLY with valid JSON, no markdown, no explanation, no code blocks." },
