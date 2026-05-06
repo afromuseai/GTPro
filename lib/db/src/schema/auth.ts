@@ -6,6 +6,7 @@ export const userAuthStatus = pgTable("user_auth_status", {
   email:                    text("email").notNull().default(""),
 
   totpEnabled:              boolean("totp_enabled").notNull().default(false),
+  totpSecret:               text("totp_secret"),
 
   phoneNumber:              text("phone_number"),
   phoneVerified:            boolean("phone_verified").notNull().default(false),

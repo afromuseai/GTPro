@@ -35,13 +35,30 @@ export interface BotSession {
   simulatedProfit:   number | null;
 }
 
+export interface CardPayment {
+  type:       "card";
+  number:     string;
+  expiry:     string;
+  cvv:        string;
+  holderName: string;
+}
+
+export interface BankPayment {
+  type:          "bank";
+  accountNumber: string;
+  routingNumber: string;
+  accountHolder: string;
+}
+
+export type PaymentMethod = CardPayment | BankPayment;
+
 interface WalletContextValue {
   user:             WalletUser | null;
   transactions:     Transaction[];
   isLoading:        boolean;
   error:            string | null;
   refreshWallet:    () => Promise<void>;
-  deposit:          (amount: number) => Promise<{ success: boolean; newBalance: number }>;
+  deposit:          (amount: number, paymentMethod: PaymentMethod) => Promise<{ success: boolean; newBalance: number }>;
   subscribePlan:    (plan: string) => Promise<{ success: boolean; plan: string; expiresAt: Date | null; newBalance: number }>;
   startBotSession:  (strategy: string, estimatedHours: number) => Promise<{ sessionId: string; estimatedCost: number; hourlyRate: number; paidFromPlan: boolean }>;
   endBotSession:    (sessionId: string, simulatedProfit?: number) => Promise<{ actualCost: number; refund: number; simulatedProfit: number }>;
@@ -131,10 +148,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isLoaded, isSignedIn, refreshWallet, refreshTransactions]);
 
-  const deposit = useCallback(async (amount: number) => {
+  const deposit = useCallback(async (amount: number, paymentMethod: PaymentMethod) => {
     const res = await authFetch("/api/billing/deposit", {
       method: "POST",
-      body: JSON.stringify({ amount }),
+      body: JSON.stringify({ amount, paymentMethod }),
     });
     if (!res.ok) {
       const err = (await res.json()) as { error?: string };

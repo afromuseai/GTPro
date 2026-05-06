@@ -9,8 +9,11 @@ import {
   calculateSessionCost,
   startBotSession,
   endBotSession,
+  validatePaymentMethod,
   PLANS,
+  CREDIT_PACKAGES,
   type PlanType,
+  type PaymentMethod,
 } from "../lib/billing-logic.js";
 
 const billingRouter = Router();
@@ -27,9 +30,9 @@ billingRouter.get("/billing/user", async (req, res) => {
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const user = await getOrCreateUser(clerkId, "");
+    const user       = await getOrCreateUser(clerkId, "");
     const planExpiry = user.planExpiresAt ? new Date(user.planExpiresAt) : null;
-    const isExpired = planExpiry ? new Date() > planExpiry : false;
+    const isExpired  = planExpiry ? new Date() > planExpiry : false;
 
     const activeSessions = await db
       .select({ status: botSessions.status })
@@ -39,17 +42,17 @@ billingRouter.get("/billing/user", async (req, res) => {
     const running = activeSessions.filter(s => s.status === "running").length;
 
     return res.json({
-      id:              user.id,
-      email:           user.email,
-      balance:         parseFloat(user.balance.toString()),
-      lockedBalance:   parseFloat(user.lockedBalance.toString()),
-      totalSpent:      parseFloat(user.totalSpent.toString()),
-      billingPlan:     user.billingPlan,
-      planExpiresAt:   planExpiry,
+      id:            user.id,
+      email:         user.email,
+      balance:       parseFloat(user.balance.toString()),
+      lockedBalance: parseFloat(user.lockedBalance.toString()),
+      totalSpent:    parseFloat(user.totalSpent.toString()),
+      billingPlan:   user.billingPlan,
+      planExpiresAt: planExpiry,
       isExpired,
-      includedHours:   user.includedHours ?? 0,
-      usedHours:       user.usedHours ?? 0,
-      activeSessions:  running,
+      includedHours: user.includedHours ?? 0,
+      usedHours:     user.usedHours ?? 0,
+      activeSessions: running,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch user wallet");
@@ -58,19 +61,37 @@ billingRouter.get("/billing/user", async (req, res) => {
 });
 
 // ── POST /api/billing/deposit ─────────────────────────────────────────────────
-// Adds service credits. No withdrawals exist.
+// Requires a valid payment method before credits are deposited.
+// Validates card / bank details server-side — credits are only added after
+// payment validation passes (simulated processor; swap for Stripe when ready).
 
 billingRouter.post("/billing/deposit", async (req, res) => {
   const clerkId = getUserId(req);
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
-  const { amount } = req.body as { amount?: number };
+  const { amount, paymentMethod } = req.body as {
+    amount?:        number;
+    paymentMethod?: PaymentMethod;
+  };
+
+  // ── Amount validation ────────────────────────────────────────────────────────
   if (!amount || amount < 10 || amount > 500) {
     return res.status(400).json({ error: "Deposit must be between $10 and $500" });
   }
 
+  // ── Payment method validation — REQUIRED before any credit deposit ───────────
+  if (!paymentMethod || !paymentMethod.type) {
+    return res.status(400).json({ error: "A payment method (card or bank) is required to add credits" });
+  }
+
+  const pmError = validatePaymentMethod(paymentMethod);
+  if (pmError) {
+    return res.status(400).json({ error: pmError });
+  }
+
+  // ── Process deposit ──────────────────────────────────────────────────────────
   try {
-    const user = await getOrCreateUser(clerkId, "");
+    const user       = await getOrCreateUser(clerkId, "");
     const newBalance = user.balance + amount;
 
     await db.transaction(async (tx) => {
@@ -80,14 +101,14 @@ billingRouter.post("/billing/deposit", async (req, res) => {
         .where(eq(users.id, user.id));
 
       await tx.insert(transactions).values({
-        userId: user.id,
-        type: "deposit",
+        userId:      user.id,
+        type:        "deposit",
         amount,
-        description: `Service credit deposit — $${amount}`,
+        description: `Credit deposit via ${paymentMethod.type === "card" ? "card" : "bank transfer"} — $${amount}`,
       });
     });
 
-    req.log.info({ clerkId, amount }, "Credit deposit successful");
+    req.log.info({ clerkId, amount, via: paymentMethod.type }, "Credit deposit successful");
     return res.json({ success: true, newBalance });
   } catch (err) {
     req.log.error({ err }, "Deposit failed");
@@ -118,7 +139,6 @@ billingRouter.post("/billing/subscribe", async (req, res) => {
 });
 
 // ── GET /api/billing/transactions ─────────────────────────────────────────────
-// Returns deposits, usage, refunds, plan purchases only. No "profit" cash entries.
 
 billingRouter.get("/billing/transactions", async (req, res) => {
   const clerkId = getUserId(req);
@@ -134,7 +154,7 @@ billingRouter.get("/billing/transactions", async (req, res) => {
 
     return res.json(
       txns
-        .filter(t => t.type !== "profit") // legacy guard — profit is never logged as cash
+        .filter(t => t.type !== "profit")
         .map(t => ({
           id:          t.id,
           type:        t.type,
@@ -156,7 +176,7 @@ billingRouter.post("/bot/session/start", async (req, res) => {
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   const { strategy, estimatedHours } = req.body as {
-    strategy?: string;
+    strategy?:       string;
     estimatedHours?: number;
   };
   if (!strategy || !estimatedHours || estimatedHours <= 0) {
@@ -164,7 +184,7 @@ billingRouter.post("/bot/session/start", async (req, res) => {
   }
 
   try {
-    const session = await startBotSession(clerkId, strategy, estimatedHours);
+    const session  = await startBotSession(clerkId, strategy, estimatedHours);
     const costInfo = await calculateSessionCost(clerkId, estimatedHours);
 
     req.log.info({ clerkId, strategy, estimatedHours, cost: costInfo.estimatedCost }, "Bot session started");
@@ -192,7 +212,7 @@ billingRouter.post("/bot/session/end", async (req, res) => {
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   const { sessionId, simulatedProfit = 0 } = req.body as {
-    sessionId?: string;
+    sessionId?:       string;
     simulatedProfit?: number;
   };
   if (!sessionId) return res.status(400).json({ error: "Session ID required" });
@@ -216,7 +236,7 @@ billingRouter.get("/bot/session/:id", async (req, res) => {
 
   const { id } = req.params;
   try {
-    const user = await getUserWallet(clerkId);
+    const user      = await getUserWallet(clerkId);
     const [session] = await db
       .select()
       .from(botSessions)
@@ -246,7 +266,7 @@ billingRouter.get("/bot/session/:id", async (req, res) => {
 // ── GET /api/billing/plans ────────────────────────────────────────────────────
 
 billingRouter.get("/billing/plans", (_req, res) => {
-  return res.json(PLANS);
+  return res.json({ plans: PLANS, packages: CREDIT_PACKAGES });
 });
 
 export default billingRouter;

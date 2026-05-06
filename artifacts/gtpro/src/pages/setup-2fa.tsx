@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useUser } from "@clerk/react";
+import { useUser, useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
 import {
   Shield, Smartphone, Copy, Check, ArrowRight,
@@ -15,10 +15,17 @@ type Step = "totp-setup" | "totp-verify" | "phone-entry" | "phone-verify" | "com
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function apiPost(path: string, body: object) {
+type GetToken = () => Promise<string | null>;
+
+async function apiPost(path: string, body: object, getToken: GetToken) {
+  let token: string | null = null;
+  try { token = await getToken(); } catch {}
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     credentials: "include",
     body: JSON.stringify(body),
   });
@@ -27,8 +34,13 @@ async function apiPost(path: string, body: object) {
   return data;
 }
 
-async function apiGet(path: string) {
-  const res = await fetch(`${BASE}${path}`, { credentials: "include" });
+async function apiGet(path: string, getToken: GetToken) {
+  let token: string | null = null;
+  try { token = await getToken(); } catch {}
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+  });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Request failed");
   return data;
@@ -36,6 +48,7 @@ async function apiGet(path: string) {
 
 export function Setup2FAPage() {
   const { user, isLoaded } = useUser();
+  const { getToken }       = useAuth();
   const [, navigate]       = useLocation();
 
   const [step,         setStep]        = React.useState<Step>("totp-setup");
@@ -60,7 +73,7 @@ export function Setup2FAPage() {
         .then((d) => { if (d.isAdmin) navigate("/dashboard"); })
         .catch(() => {});
     }
-    apiGet("/api/auth/2fa/status").then((s) => {
+    apiGet("/api/auth/2fa/status", getToken).then((s) => {
       if (s.signupCompleted) navigate("/dashboard");
     }).catch(() => {});
   }, [isLoaded, user]);
@@ -73,32 +86,31 @@ export function Setup2FAPage() {
   }, [resendTimer]);
 
   // ── TOTP: init ──────────────────────────────────────────────────────────────
+  const totpInitiatedRef = React.useRef(false);
   React.useEffect(() => {
     if (step !== "totp-setup" || !isLoaded || !user) return;
-    if (qrCode) return;
+    if (qrCode || totpInitiatedRef.current) return;
+    totpInitiatedRef.current = true;
 
     (async () => {
       try {
-        const factor = await user.createTOTP();
-
-        setQrCode(factor.totp_uri); // ✅ correct field
-        setTotpSecret(factor.secret ?? "");
-      } catch (err) {
+        const email = user?.emailAddresses?.[0]?.emailAddress ?? "";
+        const data = await apiPost("/api/auth/2fa/setup", { email }, getToken);
+        setQrCode(data.uri);
+        setTotpSecret(data.secret ?? "");
+      } catch (err: any) {
         console.error(err);
-        setError("Failed to initialise authenticator setup. Please refresh.");
+        setError(err.message ?? "Failed to initialise authenticator setup. Please refresh.");
       }
     })();
-    console.log(data);
   }, [step, isLoaded, user]);
 
   // ── TOTP: verify code ───────────────────────────────────────────────────────
   async function handleVerifyTotp() {
-    if (!user || totpCode.length !== 6) return;
+    if (totpCode.length !== 6) return;
     setBusy(true); setError("");
     try {
-      await user.verifyTOTP({ code: totpCode });
-      // Record in our DB
-      await apiPost("/api/auth/2fa/mark-totp", {});
+      await apiPost("/api/auth/2fa/verify-totp", { code: totpCode }, getToken);
       setTotpCode("");
       setStep("phone-entry");
     } catch (err: any) {
@@ -114,7 +126,7 @@ export function Setup2FAPage() {
     if (!phone.trim()) return;
     setBusy(true); setError("");
     try {
-      const data = await apiPost("/api/auth/phone/send-code", { phoneNumber: phone.trim() });
+      const data = await apiPost("/api/auth/phone/send-code", { phoneNumber: phone.trim() }, getToken);
       setDevSmsCode(data.devCode ?? ""); // dev only
       setResendTimer(60);
       setStep("phone-verify");
@@ -130,9 +142,9 @@ export function Setup2FAPage() {
     if (smsCode.length !== 6) return;
     setBusy(true); setError("");
     try {
-      await apiPost("/api/auth/phone/verify", { code: smsCode });
+      await apiPost("/api/auth/phone/verify", { code: smsCode }, getToken);
       // Both TOTP + phone done — complete signup
-      await apiPost("/api/auth/signup/complete", {});
+      await apiPost("/api/auth/signup/complete", {}, getToken);
       setStep("complete");
       setTimeout(() => navigate("/dashboard"), 2500);
     } catch (err: any) {
@@ -148,7 +160,7 @@ export function Setup2FAPage() {
     if (resendTimer > 0) return;
     setError("");
     try {
-      const data = await apiPost("/api/auth/phone/send-code", { phoneNumber: phone.trim() });
+      const data = await apiPost("/api/auth/phone/send-code", { phoneNumber: phone.trim() }, getToken);
       setDevSmsCode(data.devCode ?? "");
       setResendTimer(60);
     } catch (err: any) {
@@ -253,15 +265,20 @@ export function Setup2FAPage() {
                 </div>
               </div>
 
+              {error && !qrCode && (
+                <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3">
+                  <div className="flex gap-2">
+                    <AlertTriangle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-300">{error}</p>
+                  </div>
+                </div>
+              )}
+
               {qrCode ? (
                 <div className="space-y-4">
                   <div className="flex justify-center">
                     <div className="p-3 bg-white rounded-xl">
-                      {qrCode.startsWith("otpauth://") ? (
-                        <QRCodeSVG value={qrCode} size={176} bgColor="#ffffff" fgColor="#0D1221" level="M" />
-                      ) : (
-                        <img src={qrCode} alt="2FA QR Code" className="w-44 h-44" />
-                      )}
+                      <QRCodeSVG value={qrCode} size={200} bgColor="#ffffff" fgColor="#000000" level="H" />
                     </div>
                   </div>
 
@@ -302,7 +319,7 @@ export function Setup2FAPage() {
                     {busy ? "Verifying..." : "Verify & Continue"} <ArrowRight size={14} className="ml-2" />
                   </Button>
                 </div>
-              ) : (
+              ) : !error && (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   <span className="ml-2 text-sm text-muted-foreground">Generating QR code…</span>

@@ -3,6 +3,7 @@ import { getAuth, createClerkClient } from "@clerk/express";
 import { db, users } from "@workspace/db";
 import { userAuthStatus } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import crypto from "crypto";
 import { getOrCreateUser } from "../lib/billing-logic.js";
 import {
   validatePhoneNumber,
@@ -10,6 +11,66 @@ import {
   generateVerificationCode,
   isCodeExpired,
 } from "../lib/phone-validation.js";
+
+// ── Pure-crypto TOTP helpers (RFC 6238 / RFC 4226) ───────────────────────────
+
+function base32Decode(input: string): Buffer {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const str = input.toUpperCase().replace(/=+$/, "");
+  const output: number[] = [];
+  let bits = 0, value = 0;
+  for (const ch of str) {
+    const idx = chars.indexOf(ch);
+    if (idx === -1) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { output.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(output);
+}
+
+function generateTotpSecret(): string {
+  // Proper RFC 4648 base32 encoding of 20 random bytes → 32-character secret.
+  // 20 bytes × 8 bits = 160 bits; 160 / 5 bits-per-char = exactly 32 chars (no padding needed).
+  // Authenticator apps require secrets that are multiples of 8 base32 chars (16, 24, 32…).
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const raw = crypto.randomBytes(20);
+  let result = "";
+  let buf = 0, bitsLeft = 0;
+  for (const byte of raw) {
+    buf = (buf << 8) | byte;
+    bitsLeft += 8;
+    while (bitsLeft >= 5) {
+      bitsLeft -= 5;
+      result += chars[(buf >> bitsLeft) & 0x1f];
+    }
+  }
+  return result; // always 32 chars for 20-byte input
+}
+
+function computeTotp(secret: string, window = 0): string {
+  const key = base32Decode(secret);
+  const counter = Math.floor(Date.now() / 1000 / 30) + window;
+  const buf = Buffer.alloc(8);
+  let tmp = counter;
+  for (let i = 7; i >= 0; i--) { buf[i] = tmp & 0xff; tmp = Math.floor(tmp / 256); }
+  const hmac = crypto.createHmac("sha1", key).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code = (
+    ((hmac[offset]     & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) <<  8) |
+     (hmac[offset + 3] & 0xff)
+  ) % 1_000_000;
+  return code.toString().padStart(6, "0");
+}
+
+function verifyTotp(secret: string, token: string, drift = 1): boolean {
+  for (let w = -drift; w <= drift; w++) {
+    if (computeTotp(secret, w) === token) return true;
+  }
+  return false;
+}
 
 const auth2faRouter = Router();
 
@@ -95,25 +156,58 @@ auth2faRouter.post("/auth/email/validate", async (req, res) => {
 });
 
 // ── POST /api/auth/phone/send-code ────────────────────────────────────────────
-// Validates phone (blocks VOIP/temporal) and sends SMS code
+// Validates phone (blocks VOIP/virtual) and sends SMS code via Twilio
 
 auth2faRouter.post("/auth/phone/send-code", async (req, res) => {
   const clerkId = getUserId(req);
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   const { phoneNumber } = req.body as { phoneNumber?: string };
-  if (!phoneNumber) return res.status(400).json({ error: "Phone number required" });
+  if (!phoneNumber) return res.status(400).json({ error: "Phone number required." });
 
+  // ── Step 1: structural validity via libphonenumber-js ────────────────────
   const validation = validatePhoneNumber(phoneNumber);
   if (!validation.valid) {
-    return res.status(400).json({
-      error: validation.reason,
-      isVoIP: validation.isVoIP,
-      isTemporal: validation.isTemporal,
-    });
+    return res.status(400).json({ error: validation.reason, isVoIP: validation.isVoIP });
   }
 
-  // Check rate-limit: no more than one code per 60 seconds
+  const hasTwilio =
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_PHONE_NUMBER;
+
+  // ── Step 2: Twilio Lookup — line type check (catches virtual/VoIP) ───────
+  if (hasTwilio) {
+    try {
+      const { default: twilio } = await import("twilio");
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+      const lookup = await client.lookups.v2
+        .phoneNumbers(validation.normalized!)
+        .fetch({ fields: "line_type_intelligence" });
+
+      const lineType: string | undefined =
+        (lookup as any).lineTypeIntelligence?.type?.toLowerCase();
+
+      const BLOCKED_LINE_TYPES = ["voip", "nonFixedVoip", "virtual", "toll-free", "premium-rate"];
+      if (lineType && BLOCKED_LINE_TYPES.some((t) => lineType.includes(t))) {
+        return res.status(400).json({
+          error: `This number is registered as a ${lineType} line and is not supported. Please use a real mobile or landline number.`,
+          isVoIP: true,
+        });
+      }
+    } catch (lookupErr: any) {
+      // Lookup errors (e.g. unknown number) treated as invalid
+      req.log.warn({ lookupErr }, "Twilio Lookup failed");
+      if (lookupErr?.status === 404 || lookupErr?.code === 20404) {
+        return res.status(400).json({
+          error: "This phone number could not be verified. Please check the number and try again.",
+        });
+      }
+      // Non-404 errors (API issues): fall through and allow — don't block real users
+    }
+  }
+
+  // ── Step 3: Rate-limit — one code per 60 seconds ─────────────────────────
   const [existing] = await db
     .select({ phoneVerificationSentAt: userAuthStatus.phoneVerificationSentAt })
     .from(userAuthStatus)
@@ -138,27 +232,40 @@ auth2faRouter.post("/auth/phone/send-code", async (req, res) => {
       phoneVerified: false,
     });
 
-    // ── Production: send SMS via Twilio (wired when TWILIO_* secrets are set) ──
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+    // ── Step 4: Send SMS ──────────────────────────────────────────────────
+    if (hasTwilio) {
       const { default: twilio } = await import("twilio");
-      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
       await client.messages.create({
         to: validation.normalized!,
-        from: process.env.TWILIO_PHONE_NUMBER,
+        from: process.env.TWILIO_PHONE_NUMBER!,
         body: `Your GTPro verification code is: ${code}. Valid for 10 minutes. Do not share this code.`,
       });
+      req.log.info({ clerkId }, "Phone verification code sent via Twilio");
+      return res.json({ success: true, message: "Verification code sent to your phone." });
+    } else if (process.env.NODE_ENV === "development") {
+      // Dev mode: no Twilio — return the code directly so the flow can be tested
+      req.log.warn({ clerkId, code }, "Dev mode: returning SMS code in response (Twilio not configured)");
+      return res.json({
+        success: true,
+        message: "Dev mode: SMS not sent. Use the code shown below.",
+        devCode: code,
+      });
+    } else {
+      // Production with no Twilio configured
+      req.log.warn({ clerkId }, "SMS not sent — no Twilio credentials configured");
+      return res.status(503).json({
+        error: "SMS service is not available. Please contact support.",
+      });
     }
-
-    req.log.info({ clerkId }, "Phone verification code sent");
-
-    return res.json({
-      success: true,
-      message: "Verification code sent to your phone.",
-      // Only expose code in development for testing
-    });
-  } catch (err) {
+  } catch (err: any) {
     req.log.error({ err }, "Failed to send phone code");
-    return res.status(500).json({ error: "Failed to send verification code" });
+    // Surface Twilio-specific rejection messages (e.g. landline, unroutable)
+    const twilioMsg: string | undefined = err?.message;
+    if (twilioMsg && (twilioMsg.includes("unroutable") || twilioMsg.includes("landline") || twilioMsg.includes("not a mobile"))) {
+      return res.status(400).json({ error: "This number cannot receive SMS. Please use a mobile number." });
+    }
+    return res.status(500).json({ error: "Failed to send verification code. Please try again." });
   }
 });
 
@@ -328,26 +435,63 @@ auth2faRouter.get("/onboarding/status", async (req, res) => {
 });
 
 // ── POST /api/auth/2fa/setup ───────────────────────────────────────────────
-// Creates TOTP for user and returns otpauth URL
+// Generates a server-side TOTP secret and returns an otpauth URI
 
 auth2faRouter.post("/auth/2fa/setup", async (req, res) => {
   const clerkId = getUserId(req);
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const clerk = createClerkClient({
-      secretKey: process.env.CLERK_SECRET_KEY,
-    });
+    const secret = generateTotpSecret();
+    // Standard otpauth URI: otpauth://totp/Issuer:account?secret=…&issuer=…
+    const issuer = "GTPro";
+    const account = (req.body as { email?: string }).email?.trim() || clerkId;
+    const label = encodeURIComponent(`${issuer}:${account}`);
+    const uri = `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}`;
 
-    const factor = await clerk.users.createTOTP(clerkId);
+    await upsertAuthStatus(clerkId, { totpSecret: secret, totpEnabled: false });
 
-    return res.json({
-      success: true,
-      uri: factor.totp_uri, // 🔥 THIS IS WHAT YOUR UI NEEDS
-    });
+    req.log.info({ clerkId }, "TOTP secret generated");
+    return res.json({ success: true, uri, secret });
   } catch (err) {
     req.log.error({ err }, "Failed to create TOTP");
     return res.status(500).json({ error: "Failed to generate TOTP" });
+  }
+});
+
+// ── POST /api/auth/2fa/verify-totp ────────────────────────────────────────
+// Verifies a TOTP code against the stored secret
+
+auth2faRouter.post("/auth/2fa/verify-totp", async (req, res) => {
+  const clerkId = getUserId(req);
+  if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { code } = req.body as { code?: string };
+  if (!code || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: "A 6-digit code is required." });
+  }
+
+  try {
+    const [record] = await db
+      .select({ totpSecret: userAuthStatus.totpSecret })
+      .from(userAuthStatus)
+      .where(eq(userAuthStatus.clerkId, clerkId));
+
+    if (!record?.totpSecret) {
+      return res.status(400).json({ error: "No TOTP setup in progress. Please start setup first." });
+    }
+
+    const isValid = verifyTotp(record.totpSecret, code);
+    if (!isValid) {
+      return res.status(400).json({ error: "Invalid code. Please try again." });
+    }
+
+    await upsertAuthStatus(clerkId, { totpEnabled: true });
+    req.log.info({ clerkId }, "TOTP verified and enabled");
+    return res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "TOTP verification failed");
+    return res.status(500).json({ error: "Verification failed" });
   }
 });
 
