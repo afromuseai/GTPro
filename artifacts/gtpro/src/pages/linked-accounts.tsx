@@ -80,12 +80,13 @@ async function apiFetch(path: string, init?: RequestInit) {
 // ── Live Account Card ─────────────────────────────────────────────────────────
 
 function LiveAccountCard({
-  exchange, balance, walletBalance, testnet, connected, onDisconnect, disconnecting,
+  exchange, balance, walletBalance, testnet, demo, connected, onDisconnect, disconnecting,
 }: {
   exchange:     string;
   balance:      number;
   walletBalance:number;
   testnet:      boolean;
+  demo:         boolean;
   connected:    boolean;
   onDisconnect: () => void;
   disconnecting:boolean;
@@ -114,11 +115,13 @@ function LiveAccountCard({
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                   !connected
                     ? "text-red-400 border-red-400/30 bg-red-400/10"
+                    : demo
+                    ? "text-blue-400 border-blue-400/30 bg-blue-400/10"
                     : testnet
                     ? "text-amber-400 border-amber-400/30 bg-amber-400/10"
                     : "text-emerald-400 border-emerald-400/30 bg-emerald-400/10"
                 }`}>
-                  {!connected ? "ERROR" : testnet ? "TESTNET" : "LIVE"}
+                  {!connected ? "ERROR" : demo ? "DEMO" : testnet ? "TESTNET" : "LIVE"}
                 </span>
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5">{cfg.desc}</div>
@@ -176,6 +179,7 @@ export function LinkedAccountsPage() {
   const [showSecret,    setShowSecret]    = useState(false);
   const [showPass,      setShowPass]      = useState(false);
   const [testnetMode,   setTestnetMode]   = useState(false);
+  const [demoMode,      setDemoMode]      = useState(false);
 
   const [server,        setServer]        = useState("");
   const [login,         setLogin]         = useState("");
@@ -186,6 +190,7 @@ export function LinkedAccountsPage() {
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [success,       setSuccess]       = useState(false);
   const [error,         setError]         = useState("");
+  const [geoBlocked,   setGeoBlocked]    = useState(false);
 
   const cfg          = BROKER_CONFIG[broker];
   const isTerminal   = cfg.connectMode === "terminal";
@@ -198,7 +203,8 @@ export function LinkedAccountsPage() {
 
   function resetForm() {
     setApiKey(""); setSecretKey(""); setPassphrase(""); setServer(""); setLogin(""); setPassword("");
-    setShowSecret(false); setShowPass(false); setShowTermPass(false); setError("");
+    setShowSecret(false); setShowPass(false); setShowTermPass(false); setError(""); setGeoBlocked(false);
+    setTestnetMode(false); setDemoMode(false);
   }
 
   async function handleConnect(e: React.FormEvent) {
@@ -231,11 +237,16 @@ export function LinkedAccountsPage() {
             apiSecret:  secretKey,
             passphrase: needsPass ? passphrase : undefined,
             testnet:    testnetMode,
+            demo:       demoMode,
           }),
         });
-        const data = await res.json() as { connected?: boolean; error?: string };
+        const data = await res.json() as { connected?: boolean; error?: string; message?: string };
         if (!res.ok || !data.connected) {
-          setError(data.error ?? `Failed to connect to ${broker}. Check your API credentials.`);
+          if (data.error === "geo_blocked" || res.status === 451) {
+            setGeoBlocked(true);
+          } else {
+            setError(data.message ?? data.error ?? `Failed to connect to ${broker}. Check your API credentials.`);
+          }
           setConnecting(false); return;
         }
         await refreshStatus();
@@ -476,8 +487,71 @@ export function LinkedAccountsPage() {
                         exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}
                         className="space-y-4"
                       >
-                        {/* Testnet toggle for exchanges that support it */}
-                        {(broker === "Binance" || broker === "Bybit" || broker === "Deribit" || broker === "BitMEX" || broker === "Phemex") && (
+                        {/* Network mode selector for Binance + Bybit (Live / Demo / Testnet) */}
+                        {(broker === "Binance" || broker === "Bybit") && (
+                          <div className="p-3.5 rounded-xl border border-white/[0.07]"
+                            style={{ background: "rgba(255,255,255,0.02)" }}>
+                            <div className="flex items-center gap-2 mb-3">
+                              <TestTube size={14} className="text-amber-400 shrink-0" />
+                              <div className="text-[12px] font-bold">Network Mode</div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { id: "live",    label: "Live",         desc: "Real funds",                      color: "text-emerald-400", border: "border-emerald-400/30", bg: "bg-emerald-400/10" },
+                                { id: "demo",    label: "Demo Trading", desc: "Virtual funds, real credentials", color: "text-blue-400",    border: "border-blue-400/30",    bg: "bg-blue-400/10" },
+                                { id: "testnet", label: "Testnet",      desc: "Separate testnet keys",           color: "text-amber-400",   border: "border-amber-400/30",   bg: "bg-amber-400/10" },
+                              ].map(opt => {
+                                const active = opt.id === "demo" ? demoMode : opt.id === "testnet" ? (testnetMode && !demoMode) : (!testnetMode && !demoMode);
+                                return (
+                                  <button key={opt.id} type="button"
+                                    onClick={() => {
+                                      setDemoMode(opt.id === "demo");
+                                      setTestnetMode(opt.id === "testnet");
+                                    }}
+                                    className={`rounded-xl border p-2.5 text-left transition-all duration-150 ${
+                                      active ? `${opt.border} ${opt.bg} ${opt.color}` : "border-white/[0.07] text-muted-foreground hover:border-white/[0.14]"
+                                    }`}
+                                    style={{ background: active ? undefined : "rgba(255,255,255,0.02)" }}
+                                  >
+                                    <div className={`text-[11px] font-bold leading-tight ${active ? opt.color : ""}`}>{opt.label}</div>
+                                    <div className="text-[10px] mt-0.5 opacity-60 leading-tight">{opt.desc}</div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {demoMode && broker === "Binance" && (
+                              <p className="text-[11px] text-blue-300/70 mt-2.5 leading-relaxed">
+                                Use your real Binance credentials — demo trading uses virtual funds at <span className="font-mono text-blue-300/90">demo-fapi.binance.com</span>.
+                              </p>
+                            )}
+                            {demoMode && broker === "Bybit" && (
+                              <div className="mt-2.5 space-y-1.5">
+                                <p className="text-[11px] text-blue-300/70 leading-relaxed">
+                                  Demo trading uses virtual funds at <span className="font-mono text-blue-300/90">api-demo.bybit.com</span>.
+                                </p>
+                                <p className="text-[11px] text-amber-300/70 leading-relaxed font-medium">
+                                  ⚠ You must generate the API key from <strong className="text-amber-300/90">within Bybit Demo Trading mode</strong> — mainnet keys will not work here.
+                                </p>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  Steps: Log in to Bybit → Switch to Demo Trading → Avatar → API → Create key.
+                                </p>
+                              </div>
+                            )}
+                            {testnetMode && !demoMode && broker === "Binance" && (
+                              <p className="text-[11px] text-amber-300/70 mt-2.5 leading-relaxed">
+                                Requires separate testnet keys from <span className="font-mono text-amber-300/90">testnet.binancefuture.com</span>.
+                              </p>
+                            )}
+                            {testnetMode && !demoMode && broker === "Bybit" && (
+                              <p className="text-[11px] text-amber-300/70 mt-2.5 leading-relaxed">
+                                Requires separate testnet keys — register at <span className="font-mono text-amber-300/90">testnet.bybit.com</span>.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Testnet toggle for other exchanges */}
+                        {(broker === "Deribit" || broker === "BitMEX" || broker === "Phemex") && (
                           <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/[0.07]"
                             style={{ background: "rgba(255,255,255,0.02)" }}>
                             <div className="flex items-center gap-2.5">
@@ -569,7 +643,27 @@ export function LinkedAccountsPage() {
                     )}
                   </AnimatePresence>
 
-                  {error && (
+                  {geoBlocked && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                      className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2.5"
+                    >
+                      <div className="flex items-center gap-2 text-amber-400">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span className="text-[12px] font-bold">Binance Region Restriction</span>
+                      </div>
+                      <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                        Binance blocks API connections from US-based servers. Because GTPro runs on US infrastructure, it cannot reach Binance directly.
+                      </p>
+                      <div className="text-[11px] text-muted-foreground space-y-1.5 leading-relaxed">
+                        <p className="font-semibold text-foreground/80">Your options:</p>
+                        <p>• <strong className="text-foreground/70">Use Bybit</strong> — fully supported, no geo-restrictions, same features.</p>
+                        <p>• <strong className="text-foreground/70">Deploy to EU/Asia</strong> — self-host GTPro on a non-US server where Binance is accessible.</p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {error && !geoBlocked && (
                     <div className="flex items-start gap-2 text-red-400 text-[13px] p-3 rounded-xl border border-red-500/20 bg-red-500/5">
                       <AlertCircle size={14} className="shrink-0 mt-0.5" />
                       <span>{error}</span>
@@ -609,6 +703,7 @@ export function LinkedAccountsPage() {
               balance={acc.balance}
               walletBalance={acc.walletBalance}
               testnet={acc.testnet}
+              demo={acc.demo ?? false}
               connected={acc.connected}
               onDisconnect={() => handleDisconnect(acc.exchange)}
               disconnecting={disconnecting === acc.exchange}

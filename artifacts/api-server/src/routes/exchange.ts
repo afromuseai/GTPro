@@ -30,12 +30,13 @@ exchangeRouter.post("/exchange/connect", async (req, res) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  const { exchange, apiKey, apiSecret, passphrase, testnet } = req.body as {
+  const { exchange, apiKey, apiSecret, passphrase, testnet, demo } = req.body as {
     exchange:    string;
     apiKey:      string;
     apiSecret:   string;
     passphrase?: string;
     testnet?:    boolean;
+    demo?:       boolean;
   };
 
   if (!exchange || !apiKey || !apiSecret) {
@@ -53,7 +54,14 @@ exchangeRouter.post("/exchange/connect", async (req, res) => {
 
   const adapter    = getExchangeAdapter(exchange)!;
   const isTestnet  = Boolean(testnet);
-  const baseUrl    = adapter.getBaseUrl(isTestnet);
+  const isDemo     = Boolean(demo);
+  // Demo mode uses separate endpoints with virtual funds but real credentials
+  const baseUrl =
+    exchange === "Binance"
+      ? (await import("../lib/binance.js")).getBaseUrl(isTestnet, isDemo)
+      : exchange === "Bybit"
+      ? (await import("../lib/bybit.js")).getBaseUrl(isTestnet, isDemo)
+      : adapter.getBaseUrl(isTestnet);
 
   try {
     const account = await adapter.getAccount({
@@ -80,19 +88,41 @@ exchangeRouter.post("/exchange/connect", async (req, res) => {
       testnet:             isTestnet,
     });
 
-    req.log.info({ exchange, testnet: isTestnet }, "Exchange connected");
+    req.log.info({ exchange, testnet: isTestnet, demo: isDemo }, "Exchange connected");
 
     return res.json({
       connected:     true,
       exchange,
       testnet:       isTestnet,
+      demo:          isDemo,
       balance:       parseFloat(account.availableBalance),
       walletBalance: parseFloat(account.totalWalletBalance),
     });
   } catch (err) {
     req.log.warn({ err, exchange }, "Exchange connection validation failed");
-    const msg = err instanceof Error ? err.message : "Connection failed";
-    return res.status(400).json({ error: msg });
+    const raw = err instanceof Error ? err.message : String(err);
+    const lo = raw.toLowerCase();
+    const isBinanceGeoBlock =
+      lo.includes("restricted location") ||
+      lo.includes("eligibility") ||
+      lo.includes("-1099");
+    // Per Bybit docs: "IP addresses located in the US or Mainland China are restricted
+    // and will return a 403 Forbidden error for requests to Bybit API."
+    const isBybitGeoBlock =
+      exchange === "Bybit" && (lo.includes("bybit_geo_blocked") || lo.includes("403"));
+    if (isBinanceGeoBlock) {
+      return res.status(451).json({
+        error:   "geo_blocked",
+        message: "Binance explicitly blocks API connections from US-based servers. Deploy GTPro outside the US to use Binance, or connect a different exchange.",
+      });
+    }
+    if (isBybitGeoBlock) {
+      return res.status(451).json({
+        error:   "geo_blocked",
+        message: "Bybit explicitly blocks API connections from US and China IP addresses (403 Forbidden — documented in their API guide). This server runs in the US, so Bybit is inaccessible from here. Use MEXC, OKX, or KuCoin instead, or self-host GTPro on a non-US server.",
+      });
+    }
+    return res.status(400).json({ error: raw });
   }
 });
 
@@ -120,9 +150,12 @@ exchangeRouter.get("/exchange/accounts", async (req, res) => {
       const passphrase = cred.encryptedPassphrase ? decrypt(cred.encryptedPassphrase) : undefined;
       const account    = await adapter.getAccount({ apiKey, apiSecret, passphrase, baseUrl: cred.endpoint });
 
+      const isDemo = cred.endpoint === "https://demo-fapi.binance.com" ||
+                     cred.endpoint === "https://api-demo.bybit.com";
       return {
         exchange:      cred.exchange,
         testnet:       cred.testnet,
+        demo:          isDemo,
         balance:       parseFloat(account.availableBalance),
         walletBalance: parseFloat(account.totalWalletBalance),
         connected:     true,

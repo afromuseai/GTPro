@@ -75,18 +75,20 @@ export function Setup2FAPage() {
   // ── TOTP: init ──────────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (step !== "totp-setup" || !isLoaded || !user) return;
-    if (qrCode) return; // already initialised
+    if (qrCode) return;
+
     (async () => {
       try {
-        const data = await user.createTOTP();
-        const d = data as any;
-        // Prefer URI (otpauth://) for QRCodeSVG — fall back to qrCode data-url
-        setQrCode(d.uri ?? d.qrCode ?? "");
-        setTotpSecret(d.secret ?? "");
-      } catch {
+        const factor = await user.createTOTP();
+
+        setQrCode(factor.totp_uri); // ✅ correct field
+        setTotpSecret(factor.secret ?? "");
+      } catch (err) {
+        console.error(err);
         setError("Failed to initialise authenticator setup. Please refresh.");
       }
     })();
+    console.log(data);
   }, [step, isLoaded, user]);
 
   // ── TOTP: verify code ───────────────────────────────────────────────────────

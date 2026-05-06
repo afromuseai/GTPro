@@ -135,8 +135,13 @@ export const getOpenOrders = (cfg: BinanceConfig, symbol: string) =>
 
 // ── Registry-compatible exports ────────────────────────────────────────────────
 
-export const getBaseUrl = (testnet: boolean) =>
-  testnet ? "https://testnet.binancefuture.com" : "https://fapi.binance.com";
+export type BinanceMode = "live" | "demo" | "testnet";
+
+export const getBaseUrl = (testnet: boolean, demo = false): string => {
+  if (demo)    return "https://demo-fapi.binance.com";
+  if (testnet) return "https://testnet.binancefuture.com";
+  return "https://fapi.binance.com";
+};
 
 export async function getAccount(cfg: BinanceConfig): Promise<{ availableBalance: string; totalWalletBalance: string }> {
   const account = await getFuturesAccount(cfg);

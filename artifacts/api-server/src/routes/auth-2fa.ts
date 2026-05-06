@@ -327,4 +327,28 @@ auth2faRouter.get("/onboarding/status", async (req, res) => {
   }
 });
 
+// ── POST /api/auth/2fa/setup ───────────────────────────────────────────────
+// Creates TOTP for user and returns otpauth URL
+
+auth2faRouter.post("/auth/2fa/setup", async (req, res) => {
+  const clerkId = getUserId(req);
+  if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const clerk = createClerkClient({
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
+
+    const factor = await clerk.users.createTOTP(clerkId);
+
+    return res.json({
+      success: true,
+      uri: factor.totp_uri, // 🔥 THIS IS WHAT YOUR UI NEEDS
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create TOTP");
+    return res.status(500).json({ error: "Failed to generate TOTP" });
+  }
+});
+
 export default auth2faRouter;

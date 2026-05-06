@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/react";
 export interface ExchangeAccount {
   exchange:      string;
   testnet:       boolean;
+  demo:          boolean;
   balance:       number;
   walletBalance: number;
   connected:     boolean;
