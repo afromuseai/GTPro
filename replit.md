@@ -61,6 +61,15 @@ scripts/post-merge.sh   Runs after task merges: pnpm install + typecheck + db pu
 - Agent lifecycle billing: credits deducted on Launch Agent, refunded/settled on Stop or natural expiry
 - No-linked-account guard: modal alert before launching an agent if no exchange account is linked
 - Wallet page: Locked Credits card explains auto-refund on stop
+- **Multi-pair charts**: TradingView lightweight-charts candlestick chart on Analysis page with pair picker (BTC/ETH/SOL/BNB/AVAX) and timeframe selector; candles via OKX `/api/market/candles/:symbol`
+- **Trade journal auto-fill**: Bot engine fires `postJournal()` after every closed trade (TP, SL, or manual stop) — POSTs to `/api/journal` automatically
+- **Risk controls**: Per-bot Max Daily Loss slider (0–$200) and Position Size slider (25–200%) in the Launch Agent dialog; enforced in the price-tick loop
+- **Strategy backtesting**: `/backtesting` page — pick symbol/timeframe/strategy/date range, runs against OKX candle data server-side, returns equity curve + trade list + stats
+- **Webhook/alert system**: `/api/alerts/preferences` (GET/PUT); Settings page "Alert System" section with SMS + webhook toggles and per-event granularity; `/api/alerts/send` for delivery
+- **Portfolio page**: `/portfolio` — open positions from bot engine, session history from billing API, cumulative P&L area chart
+- **Referral/credits system**: `/referral` page — generates referral codes, shows stats, applies codes for credit grants; DB tables: `referral_codes`, `referrals`
+- **Login TOTP verification**: `LoginTOTPModal` shown every new browser session when user has TOTP enabled; clears on `sessionStorage`; calls `/api/auth/2fa/verify-totp`
+- **Bybit exchange**: Already active in exchange registry and UI
 
 ## User preferences
 

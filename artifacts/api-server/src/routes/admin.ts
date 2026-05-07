@@ -177,12 +177,12 @@ router.get("/admin/check", async (req, res) => {
 });
 
 // ── GET /admin/users ──────────────────────────────────────────────────────────
-// Returns all platform users (requires Clerk admin auth)
+// Returns all platform users + admin users (requires Clerk admin auth)
 
 router.get("/admin/users", requireClerkAdmin, async (req, res) => {
   try {
-    const allUsers = await db
-      .select({
+    const [allUsers, allAdmins] = await Promise.all([
+      db.select({
         id:           users.id,
         clerkId:      users.clerkId,
         email:        users.email,
@@ -195,19 +195,43 @@ router.get("/admin/users", requireClerkAdmin, async (req, res) => {
         note:         users.note,
         createdAt:    users.createdAt,
         updatedAt:    users.updatedAt,
-      })
-      .from(users)
-      .orderBy(desc(users.createdAt));
+      }).from(users).orderBy(desc(users.createdAt)),
+      db.select().from(adminUsers),
+    ]);
 
-    return res.json(
-      allUsers.map(u => ({
-        ...u,
-        balance:       parseFloat((u.balance ?? 0).toString()),
-        lockedBalance: parseFloat((u.lockedBalance ?? 0).toString()),
-        totalSpent:    parseFloat((u.totalSpent ?? 0).toString()),
-        note:          u.note ?? null,
-      }))
-    );
+    const adminEmailSet = new Set(allAdmins.map(a => a.email.toLowerCase().trim()));
+    const platformEmailSet = new Set(allUsers.map(u => (u.email ?? "").toLowerCase().trim()));
+
+    // Platform users, flagged if they are also admins
+    const platformRows = allUsers.map(u => ({
+      ...u,
+      balance:       parseFloat((u.balance ?? 0).toString()),
+      lockedBalance: parseFloat((u.lockedBalance ?? 0).toString()),
+      totalSpent:    parseFloat((u.totalSpent ?? 0).toString()),
+      note:          u.note ?? null,
+      isAdmin:       adminEmailSet.has((u.email ?? "").toLowerCase().trim()),
+    }));
+
+    // Admin users who have no platform account yet
+    const adminOnlyRows = allAdmins
+      .filter(a => !platformEmailSet.has(a.email.toLowerCase().trim()))
+      .map(a => ({
+        id:           `admin-${a.id}`,
+        clerkId:      "",
+        email:        a.email,
+        balance:      0,
+        lockedBalance:0,
+        totalSpent:   0,
+        billingPlan:  "admin",
+        usedHours:    0,
+        includedHours:0,
+        note:         `Admin role: ${a.role}`,
+        createdAt:    a.createdAt,
+        updatedAt:    a.createdAt,
+        isAdmin:      true,
+      }));
+
+    return res.json([...platformRows, ...adminOnlyRows]);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch admin users");
     return res.status(500).json({ error: "Failed to fetch users" });
@@ -234,7 +258,32 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
   }
 
   try {
-    const [existing] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    let platformId = id;
+
+    // Admin-only user — auto-provision a platform account on first edit
+    if (id.startsWith("admin-")) {
+      const adminUuid = id.slice("admin-".length);
+      const [adminRow] = await db.select().from(adminUsers).where(eq(adminUsers.id, adminUuid)).limit(1);
+      if (!adminRow) return res.status(404).json({ error: "Admin user not found" });
+
+      // Check for existing platform account by email
+      const [existing] = await db.select().from(users).where(eq(users.email, adminRow.email)).limit(1);
+      if (existing) {
+        platformId = existing.id;
+      } else {
+        // Create a minimal platform account for this admin
+        const syntheticClerkId = `admin:${adminRow.email}`;
+        const [created] = await db.insert(users).values({
+          clerkId:  syntheticClerkId,
+          email:    adminRow.email,
+          billingPlan: billingPlan ?? "free",
+          note:     note !== undefined ? (note === "" ? null : note) : `Admin role: ${adminRow.role}`,
+        }).returning();
+        platformId = created.id;
+      }
+    }
+
+    const [existing] = await db.select().from(users).where(eq(users.id, platformId)).limit(1);
     if (!existing) return res.status(404).json({ error: "User not found" });
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
@@ -243,9 +292,9 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
     if (billingPlan   !== undefined) updateData.billingPlan   = billingPlan;
     if (note          !== undefined) updateData.note          = note === "" ? null : note;
 
-    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    const [updated] = await db.update(users).set(updateData).where(eq(users.id, platformId)).returning();
 
-    req.log.info({ id, changes: updateData }, "Admin updated user");
+    req.log.info({ id: platformId, changes: updateData }, "Admin updated user");
     return res.json({
       id:            updated.id,
       email:         updated.email,
@@ -254,6 +303,7 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
       totalSpent:    parseFloat((updated.totalSpent ?? 0).toString()),
       billingPlan:   updated.billingPlan,
       note:          updated.note ?? null,
+      isAdmin:       true,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update user");

@@ -29,6 +29,8 @@ billingRouter.get("/billing/user", async (req, res) => {
   const clerkId = getUserId(req);
   if (!clerkId) return res.status(401).json({ error: "Unauthorized" });
 
+  res.setHeader("Cache-Control", "no-store");
+
   try {
     const user       = await getOrCreateUser(clerkId, "");
     const planExpiry = user.planExpiresAt ? new Date(user.planExpiresAt) : null;

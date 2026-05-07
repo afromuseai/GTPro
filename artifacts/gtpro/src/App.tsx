@@ -21,6 +21,9 @@ import { OnboardingPage } from "@/pages/onboarding";
 import { TermsPage } from "@/pages/terms";
 import { PrivacyPage } from "@/pages/privacy";
 import { SecurityPage } from "@/pages/security";
+import { PortfolioPage } from "@/pages/portfolio";
+import { BacktestingPage } from "@/pages/backtesting";
+import { ReferralPage } from "@/pages/referral";
 import { AppLayout } from "@/components/layout";
 import { DevBypassProvider, useDevBypass, IS_DEV } from "@/contexts/dev-bypass";
 import { AdminAuthProvider, useAdminAuth, AdminAuthContext } from "@/contexts/admin-auth";
@@ -137,10 +140,28 @@ function PasswordRequirements() {
         '.cl-formButtonPrimary, button[type="submit"]'
       );
 
+    const resetSubmitBtn = () => {
+      const submitBtn = getSubmitBtn();
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = "";
+        submitBtn.style.cursor  = "";
+        submitBtn.title = "";
+      }
+    };
+
     const enforceSubmit = () => {
+      // Only enforce when a password input is present and in the DOM.
+      // On other Clerk steps (e.g. email verification code entry) there is no
+      // password field — disabling the submit button there causes users to click
+      // "Resend" and receive a duplicate verification email.
+      if (!pwInput || !document.contains(pwInput)) {
+        resetSubmitBtn();
+        return;
+      }
       const submitBtn = getSubmitBtn();
       if (!submitBtn) return;
-      const valid = isPasswordValid(pwInput?.value ?? "");
+      const valid = isPasswordValid(pwInput.value);
       submitBtn.disabled = !valid;
       submitBtn.style.opacity = valid ? "" : "0.35";
       submitBtn.style.cursor  = valid ? "" : "not-allowed";
@@ -150,7 +171,8 @@ function PasswordRequirements() {
     };
 
     const onFormSubmit = (e: Event) => {
-      if (!isPasswordValid(pwInput?.value ?? "")) {
+      if (!pwInput || !document.contains(pwInput)) return;
+      if (!isPasswordValid(pwInput.value)) {
         e.preventDefault();
         e.stopImmediatePropagation();
         enforceSubmit();
@@ -162,7 +184,20 @@ function PasswordRequirements() {
         document.querySelectorAll<HTMLInputElement>('input[type="password"]')
       );
       const target = inputs[inputs.length - 1] ?? null;
-      if (target && target !== pwInput) {
+
+      if (!target) {
+        // No password input visible — Clerk is on a non-password step.
+        // Detach stale listeners and restore the submit button.
+        if (pwInput) {
+          pwInput.removeEventListener("input", onInput);
+          pwInput.removeEventListener("input", enforceSubmit);
+          pwInput = null;
+        }
+        resetSubmitBtn();
+        return;
+      }
+
+      if (target !== pwInput) {
         pwInput?.removeEventListener("input", onInput);
         pwInput?.removeEventListener("input", enforceSubmit);
         pwInput = target;
@@ -406,12 +441,81 @@ function OnboardingGuard({ component: Component }: { component: React.ComponentT
   return <TwoFAGuard component={Component} />;
 }
 
+function LoginTOTPModal({ onVerified, getToken }: { onVerified: () => void; getToken: () => Promise<string | null> }) {
+  const [code, setCode]     = React.useState("");
+  const [error, setError]   = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  const verify = async () => {
+    if (code.length !== 6) { setError("Enter your 6-digit TOTP code"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const token = await getToken().catch(() => null);
+      const res = await fetch(`${basePath}/api/auth/2fa/verify-totp`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ totp: code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data as { success?: boolean }).success) {
+        sessionStorage.setItem("login_totp_verified", "true");
+        onVerified();
+      } else {
+        setError((data as { error?: string }).error ?? "Invalid code — try again");
+        setCode("");
+      }
+    } catch {
+      setError("Verification failed — try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-sm mx-4 rounded-2xl border border-white/[0.08] shadow-2xl overflow-hidden"
+        style={{ background: "linear-gradient(145deg, hsl(228 45% 8%) 0%, hsl(228 50% 6%) 100%)" }}>
+        <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+        <div className="p-8 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h2 className="text-xl font-black mb-1">Verify Your Identity</h2>
+          <p className="text-[13px] text-muted-foreground mb-6">Enter the 6-digit code from your authenticator app to continue.</p>
+          <input
+            type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
+            value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={e => e.key === "Enter" && verify()}
+            placeholder="000000"
+            autoFocus
+            className="w-full h-14 rounded-xl border border-white/[0.1] bg-white/[0.04] text-center text-2xl font-black tracking-[0.35em] text-primary placeholder:text-muted-foreground/20 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all mb-3"
+          />
+          {error && <p className="text-[12px] text-red-400 mb-3">{error}</p>}
+          <button onClick={verify} disabled={loading || code.length !== 6}
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-[14px] font-black transition-all hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {loading
+              ? <><motion.div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} /> Verifying…</>
+              : "Verify & Continue"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function TwoFAGuard({ component: Component }: { component: React.ComponentType }) {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const [location]               = useLocation();
   const [status, setStatus]      = React.useState<"loading" | "ok" | "incomplete">("loading");
   const [isAdmin, setIsAdmin]    = React.useState(false);
+  const [totpEnabled, setTotpEnabled]   = React.useState(false);
+  const [totpVerified, setTotpVerified] = React.useState(false);
 
   React.useEffect(() => {
     if (!isLoaded || !isSignedIn || !user) return;
@@ -440,11 +544,17 @@ function TwoFAGuard({ component: Component }: { component: React.ComponentType }
         const res = await authFetch(`${basePath}/api/auth/2fa/status`);
         if (!res.ok) { setStatus("ok"); return; }
         const data = await res.json();
+        setTotpEnabled(data.totpEnabled ?? false);
         setStatus(data.signupCompleted ? "ok" : "incomplete");
       } catch {
         setStatus("ok");
       }
     };
+
+    // Check sessionStorage — if already verified this session, skip modal
+    if (sessionStorage.getItem("login_totp_verified") === "true") {
+      setTotpVerified(true);
+    }
 
     check();
   }, [isLoaded, isSignedIn, user, getToken]);
@@ -465,6 +575,16 @@ function TwoFAGuard({ component: Component }: { component: React.ComponentType }
   if (isAdmin) return <AppLayout><Component /></AppLayout>;
 
   if (status === "incomplete") return <Redirect to="/setup-2fa" />;
+
+  // TOTP login verification: if TOTP is set up and not yet verified this session, show modal
+  if (totpEnabled && !totpVerified) {
+    return (
+      <>
+        <AppLayout><Component /></AppLayout>
+        <LoginTOTPModal getToken={getToken} onVerified={() => setTotpVerified(true)} />
+      </>
+    );
+  }
 
   return <AppLayout><Component /></AppLayout>;
 }
@@ -557,6 +677,9 @@ function AppRoutes() {
       <Route path="/admin" component={AdminRoute} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
       <Route path="/analysis" component={() => <ProtectedRoute component={AnalysisPage} />} />
+      <Route path="/portfolio" component={() => <ProtectedRoute component={PortfolioPage} />} />
+      <Route path="/backtesting" component={() => <ProtectedRoute component={BacktestingPage} />} />
+      <Route path="/referral" component={() => <ProtectedRoute component={ReferralPage} />} />
       <Route path="/journal" component={() => <ProtectedRoute component={JournalPage} />} />
       <Route path="/linked-accounts" component={() => <ProtectedRoute component={LinkedAccountsPage} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={SettingsPage} />} />

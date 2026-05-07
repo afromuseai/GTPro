@@ -66,7 +66,7 @@ type TabId = typeof TABS[number]["id"];
 // ── Users Tab ─────────────────────────────────────────────────────────────────
 
 interface AdminUser {
-  id: number;
+  id: number | string;
   clerkId: string;
   email: string;
   billingPlan: string;
@@ -75,9 +75,10 @@ interface AdminUser {
   totalSpent: number;
   createdAt: string;
   note: string | null;
+  isAdmin?: boolean;
 }
 
-const PLANS = ["all", "free", "starter", "pro", "enterprise"] as const;
+const PLANS = ["all", "free", "starter", "pro", "enterprise", "admin"] as const;
 type PlanFilter = typeof PLANS[number];
 
 const PLAN_COLORS: Record<string, string> = {
@@ -85,6 +86,7 @@ const PLAN_COLORS: Record<string, string> = {
   starter:    "border-blue-400/30 text-blue-400",
   pro:        "border-primary/30 text-primary",
   enterprise: "border-violet-400/30 text-violet-400",
+  admin:      "border-violet-400/40 text-violet-400",
 };
 
 function UsersTab() {
@@ -93,7 +95,7 @@ function UsersTab() {
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
   const [planFilter, setPlanFilter] = useState<PlanFilter>("all");
-  const [editing, setEditing]   = useState<number | null>(null);
+  const [editing, setEditing]   = useState<number | string | null>(null);
   const [draft, setDraft]       = useState<Partial<AdminUser>>({});
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -127,7 +129,7 @@ function UsersTab() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  async function saveUser(id: number) {
+  async function saveUser(id: number | string) {
     setSaving(true);
     try {
       const res = await fetch(`/api/admin/users/${id}`, {
@@ -154,7 +156,8 @@ function UsersTab() {
     const matchSearch = search === "" ||
       u.email.toLowerCase().includes(search.toLowerCase()) ||
       u.clerkId.toLowerCase().includes(search.toLowerCase());
-    const matchPlan = planFilter === "all" || u.billingPlan === planFilter;
+    const matchPlan = planFilter === "all"
+      || (planFilter === "admin" ? u.isAdmin : u.billingPlan === planFilter);
     return matchSearch && matchPlan;
   });
 
@@ -201,7 +204,9 @@ function UsersTab() {
                 {plan === "all" ? "All" : plan}
                 {plan !== "all" && (
                   <span className="ml-1 opacity-60">
-                    {users.filter(u => u.billingPlan === plan).length}
+                    {plan === "admin"
+                      ? users.filter(u => u.isAdmin).length
+                      : users.filter(u => u.billingPlan === plan).length}
                   </span>
                 )}
               </button>
@@ -243,11 +248,16 @@ function UsersTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[13px] font-bold truncate">{user.email}</span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/15 text-[10px] font-bold text-primary uppercase tracking-wide">
+                        {user.isAdmin && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-violet-500/15 border border-violet-400/30 text-[10px] font-bold text-violet-400 uppercase tracking-wide flex items-center gap-1">
+                            <Shield size={8} /> Admin
+                          </span>
+                        )}
+                        <span className={`px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/15 text-[10px] font-bold text-primary uppercase tracking-wide ${user.billingPlan === "admin" ? "opacity-50" : ""}`}>
                           {user.billingPlan}
                         </span>
                       </div>
-                      <span className="text-[10px] text-muted-foreground/30 font-mono">{user.clerkId}</span>
+                      <span className="text-[10px] text-muted-foreground/30 font-mono">{user.clerkId || "—"}</span>
                       <div className="flex items-center gap-4 mt-2 flex-wrap">
                         {isEditing ? (
                           <>
@@ -255,15 +265,15 @@ function UsersTab() {
                               Balance
                               <input
                                 type="number" step="0.01"
-                                defaultValue={user.balance}
-                                onChange={e => setDraft(d => ({ ...d, balance: parseFloat(e.target.value) }))}
+                                value={draft.balance ?? 0}
+                                onChange={e => setDraft(d => ({ ...d, balance: parseFloat(e.target.value) || 0 }))}
                                 className="w-24 px-2 py-0.5 rounded-lg border border-white/[0.1] bg-white/[0.04] text-[12px] text-foreground focus:outline-none focus:border-primary/40"
                               />
                             </label>
                             <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
                               Plan
                               <select
-                                defaultValue={user.billingPlan}
+                                value={draft.billingPlan ?? user.billingPlan}
                                 onChange={e => setDraft(d => ({ ...d, billingPlan: e.target.value }))}
                                 className="px-2 py-0.5 rounded-lg border border-white/[0.1] bg-[hsl(228_45%_10%)] text-[12px] text-foreground focus:outline-none focus:border-primary/40">
                                 {["free","starter","pro","enterprise"].map(p => <option key={p} value={p}>{p}</option>)}
@@ -273,7 +283,7 @@ function UsersTab() {
                               Note
                               <input
                                 type="text"
-                                defaultValue={user.note ?? ""}
+                                value={draft.note ?? ""}
                                 onChange={e => setDraft(d => ({ ...d, note: e.target.value }))}
                                 placeholder="Admin note…"
                                 className="flex-1 min-w-0 px-2 py-0.5 rounded-lg border border-white/[0.1] bg-white/[0.04] text-[12px] text-foreground focus:outline-none focus:border-primary/40"
@@ -312,7 +322,7 @@ function UsersTab() {
                           </button>
                         </>
                       ) : (
-                        <button onClick={() => { setEditing(user.id); setDraft({}); }}
+                        <button onClick={() => { setEditing(user.id); setDraft({ balance: user.balance, billingPlan: user.billingPlan, note: user.note ?? "" }); }}
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/[0.08] text-[11px] text-muted-foreground hover:text-foreground hover:border-white/[0.15] transition-colors">
                           <Edit2 size={11} /> Edit
                         </button>

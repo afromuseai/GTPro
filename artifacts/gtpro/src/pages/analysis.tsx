@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, TrendingUp, TrendingDown, Minus, Activity, BarChart3, Zap, Clock,
   Target, Shield, ShieldAlert, Crosshair, Check, AlertTriangle, LineChart,
-  ArrowUpRight, ArrowDownRight, Wifi, WifiOff, RefreshCw,
+  ArrowUpRight, ArrowDownRight, Wifi, WifiOff, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { useSignalEngine, SignalType } from "@/engine/signal-engine";
 import { useMarketData } from "@/engine/market-data";
+import { CandlestickChart } from "@/components/candlestick-chart";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,10 +131,14 @@ function MiniSparkline({ up }: { up: boolean }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+const CHART_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "AVAX/USDT"];
+
 export function AnalysisPage() {
   const { currentSignal, signalHistory, regime, signalFlash } = useSignalEngine();
   const { currentPrice, trend, volatility, dataMode, priceChangePct } = useMarketData();
   const [tab, setTab] = useState<"indicators" | "confluence" | "reasoning">("indicators");
+  const [chartPair, setChartPair] = useState("BTC/USDT");
+  const [showPairPicker, setShowPairPicker] = useState(false);
   const pairs = usePairPrices();
   useNow();
 
@@ -191,6 +196,46 @@ export function AnalysisPage() {
               {dataMode === "live" ? "Live CoinGecko" : "Real-Time Fallback"}
             </div>
           </div>
+        </div>
+      </motion.div>
+
+      {/* ── Candlestick Chart ── */}
+      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.04 }}>
+        <div className="rounded-2xl border border-white/[0.07] overflow-hidden"
+          style={{ background: "linear-gradient(145deg, hsl(228 45% 8%) 0%, hsl(228 50% 6%) 100%)" }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={13} className="text-primary" />
+              <span className="text-[12px] font-bold">Price Chart</span>
+            </div>
+            {/* Pair picker */}
+            <div className="relative">
+              <button
+                onClick={() => setShowPairPicker(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-white/[0.14] transition-all"
+                style={{ background: "rgba(255,255,255,0.03)" }}>
+                {chartPair}
+                <ChevronDown size={10} />
+              </button>
+              <AnimatePresence>
+                {showPairPicker && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-1 z-20 rounded-xl border border-white/[0.1] py-1 shadow-xl min-w-[130px]"
+                    style={{ background: "hsl(228 52% 8%)" }}>
+                    {CHART_PAIRS.map(p => (
+                      <button key={p} onClick={() => { setChartPair(p); setShowPairPicker(false); }}
+                        className={`w-full text-left px-3 py-2 text-[11px] font-bold transition-colors hover:bg-white/[0.05] ${p === chartPair ? "text-primary" : "text-muted-foreground"}`}>
+                        {p}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+          <CandlestickChart symbol={chartPair} height={320} />
         </div>
       </motion.div>
 

@@ -1331,6 +1331,8 @@ export function DashboardPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy>("Sweep & Reclaim");
   const [selectedDuration, setSelectedDuration] = useState<DurationKey>("1h");
   const [showNoAccountAlert, setShowNoAccountAlert] = useState(false);
+  const [riskMaxLoss, setRiskMaxLoss] = useState(0);
+  const [riskPositionSizePct, setRiskPositionSizePct] = useState(100);
   const remaining = useCountdown(bot?.status === "RUNNING" ? bot.endTime : null);
 
   function handleLaunchClick() {
@@ -1338,7 +1340,7 @@ export function DashboardPage() {
       setShowNoAccountAlert(true);
       return;
     }
-    launch(selectedStrategy, selectedDuration);
+    launch(selectedStrategy, selectedDuration, { maxDailyLoss: riskMaxLoss, positionSizePct: riskPositionSizePct });
   }
 
   const totalPnl = (stats?.pnlToday ?? 0) + (bot?.pnl ?? 0);
@@ -1701,7 +1703,7 @@ export function DashboardPage() {
                     </div>
 
                     {/* Duration select */}
-                    <div className="mb-6">
+                    <div className="mb-5">
                       <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-muted-foreground mb-3">Duration</div>
                       <div className="grid grid-cols-4 gap-2">
                         {DURATIONS.map(d => (
@@ -1719,6 +1721,44 @@ export function DashboardPage() {
                             {d}
                           </motion.button>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Risk management controls */}
+                    <div className="mb-6">
+                      <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-muted-foreground mb-3 flex items-center gap-2">
+                        Risk Controls
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary/60 border border-primary/15">optional</span>
+                      </div>
+                      <div className="space-y-3 rounded-xl border border-white/[0.06] p-4" style={{ background: "rgba(255,255,255,0.02)" }}>
+                        {/* Max Daily Loss */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] text-muted-foreground/70">Max Daily Loss</span>
+                            <span className="text-[11px] font-bold text-red-400">
+                              {riskMaxLoss === 0 ? "Off" : `$${riskMaxLoss}`}
+                            </span>
+                          </div>
+                          <input type="range" min={0} max={200} step={5} value={riskMaxLoss}
+                            onChange={e => setRiskMaxLoss(Number(e.target.value))}
+                            className="w-full h-1.5 rounded-full accent-red-500" />
+                          <div className="flex justify-between text-[9px] text-muted-foreground/30 mt-1">
+                            <span>Off</span><span>$200</span>
+                          </div>
+                        </div>
+                        {/* Position Size */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] text-muted-foreground/70">Position Size</span>
+                            <span className="text-[11px] font-bold text-primary">{riskPositionSizePct}%</span>
+                          </div>
+                          <input type="range" min={25} max={200} step={25} value={riskPositionSizePct}
+                            onChange={e => setRiskPositionSizePct(Number(e.target.value))}
+                            className="w-full h-1.5 rounded-full accent-primary" />
+                          <div className="flex justify-between text-[9px] text-muted-foreground/30 mt-1">
+                            <span>25%</span><span>200%</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 

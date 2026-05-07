@@ -12,6 +12,9 @@ import auth2faRouter       from "./auth-2fa";
 import fleetRouter, { fleetMiddleware } from "./fleet";
 import journalRouter       from "./journal";
 import notificationsRouter from "./notifications";
+import backtestRouter      from "./backtest";
+import alertsRouter        from "./alerts";
+import referralRouter      from "./referral";
 
 const router: IRouter = Router();
 
@@ -31,5 +34,8 @@ router.use(auth2faRouter);
 router.use(fleetRouter);
 router.use(journalRouter);
 router.use(notificationsRouter);
+router.use(backtestRouter);
+router.use(alertsRouter);
+router.use(referralRouter);
 
 export default router;

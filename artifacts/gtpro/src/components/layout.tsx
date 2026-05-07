@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useUser, useClerk, useAuth } from "@clerk/react";
-import { LayoutDashboard, LineChart, Link as LinkIcon, Settings, LogOut, Menu, X, Bell, Bot, Shield, Cpu, Home, Wallet, ShieldAlert, BookOpen, CheckCheck, Trash2, Info, Zap, Gift, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, LineChart, Link as LinkIcon, Settings, LogOut, Menu, X, Bell, Bot, Shield, Cpu, Home, Wallet, ShieldAlert, BookOpen, CheckCheck, Trash2, Info, Zap, Gift, AlertTriangle, BarChart3, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DevBypassContext } from "@/contexts/dev-bypass";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,7 +13,10 @@ import { ChatWidget } from "@/components/chat-widget";
 const NAV_ITEMS = [
   { href: "/dashboard",      label: "Dashboard",      icon: LayoutDashboard },
   { href: "/analysis",       label: "Analysis",        icon: LineChart },
+  { href: "/portfolio",      label: "Portfolio",       icon: BarChart3 },
+  { href: "/backtesting",    label: "Backtesting",     icon: FlaskConical },
   { href: "/journal",        label: "Trade Journal",   icon: BookOpen },
+  { href: "/referral",       label: "Referral",        icon: Gift },
   { href: "/linked-accounts",label: "Linked Accounts", icon: LinkIcon },
   { href: "/wallet",         label: "Service Credits", icon: Wallet },
   { href: "/settings",       label: "Settings",        icon: Settings },
@@ -258,9 +261,6 @@ function NotificationBell() {
             >
               {unreadCount > 9 ? "9+" : unreadCount}
             </motion.span>
-          )}
-          {unreadCount === 0 && (
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary/60" />
           )}
         </Button>
       </motion.div>

@@ -23,6 +23,22 @@ export const BotAuthContext = createContext<BotAuthCtx>({ getToken: async () => 
 export type Strategy   = "Sweep & Reclaim" | "Absorption Reversal" | "Void Continuation";
 export type DurationKey = "1h" | "3h" | "6h" | "12h";
 export type BotStatus  = "RUNNING" | "PAUSED" | "STOPPED" | "COMPLETED";
+
+export interface RiskConfig {
+  maxDailyLoss:    number;
+  maxDrawdownPct:  number;
+  positionSizePct: number;
+  tpMultiplier:    number;
+  slMultiplier:    number;
+}
+
+export const DEFAULT_RISK_CONFIG: RiskConfig = {
+  maxDailyLoss:    0,
+  maxDrawdownPct:  0,
+  positionSizePct: 100,
+  tpMultiplier:    1.0,
+  slMultiplier:    1.0,
+};
 export type LogType    = "system" | "signal" | "trade" | "profit" | "warn";
 
 export interface LogEntry {
@@ -71,6 +87,7 @@ export interface BotInstance {
   openTrade:     OpenTrade | null;
   trades:        number;
   liveExchange:  boolean;
+  riskConfig?:   RiskConfig;
 }
 
 interface BotEngineContextValue {
@@ -78,7 +95,7 @@ interface BotEngineContextValue {
   logs:         LogEntry[];
   tradeHistory: TradeRecord[];
   pnlFlash:     "up" | "down" | null;
-  launch:       (strategy: Strategy, duration: DurationKey) => void;
+  launch:       (strategy: Strategy, duration: DurationKey, riskConfig?: RiskConfig) => void;
   pause:        () => void;
   resume:       () => void;
   stop:         () => void;
@@ -210,6 +227,38 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     setLogs(prev => [makeLog(msg, type), ...prev].slice(0, 100));
   }, []);
 
+  // ── Auto-fill trade journal ────────────────────────────────────────────────
+
+  async function postJournal(
+    direction:  "long" | "short",
+    entryPrice: number,
+    exitPrice:  number,
+    pnl:        number,
+    strategy:   Strategy,
+  ) {
+    try {
+      let token: string | null = null;
+      try { token = await getTokenRef.current(); } catch {}
+      await fetch(`${BASE_PATH}/api/journal`, {
+        method:      "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          signalType:  direction === "long" ? "BUY" : "SELL",
+          ticker:      "BTC/USDT",
+          entryPrice,
+          confidence:  85,
+          strategy,
+          reasoning:   `Automated trade: ${direction.toUpperCase()} @ $${entryPrice.toFixed(0)}, exit @ $${exitPrice.toFixed(0)}. P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`,
+          pnl,
+        }),
+      });
+    } catch { /* fire and forget */ }
+  }
+
   // ── Record closed trade ────────────────────────────────────────────────────
 
   const recordTrade = useCallback((
@@ -236,6 +285,8 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       isLive,
     };
     setTradeHistory(prev => [record, ...prev].slice(0, 200));
+    // Auto-fill journal (fire-and-forget)
+    postJournal(trade.direction, trade.entryPrice, exitPrice, pnl, strategy);
   }, []);
 
   const flash = useCallback((dir: "up" | "down") => {
@@ -261,6 +312,23 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     if (!current || current.status !== "RUNNING" || !current.openTrade) return;
 
     const trade = current.openTrade;
+
+    // Risk enforcement: max daily loss
+    const riskCfg = current.riskConfig;
+    if (riskCfg && riskCfg.maxDailyLoss > 0) {
+      const unrealizedNow = calcUnrealized(trade, currentPrice);
+      const totalLoss     = -(current.realizedPnl + unrealizedNow);
+      if (totalLoss >= riskCfg.maxDailyLoss) {
+        appendLog(`⚠ Max daily loss limit ($${riskCfg.maxDailyLoss}) reached — stopping bot`, "warn");
+        fireExchangeClose(trade);
+        recordTrade(trade, currentPrice, unrealizedNow, "manual", current.strategy, current.id, current.liveExchange);
+        const finalPnl = +(current.realizedPnl + unrealizedNow).toFixed(2);
+        setBot(prev => prev ? { ...prev, status: "STOPPED", pnl: finalPnl, realizedPnl: finalPnl, openTrade: null } : null);
+        const sid = sessionIdRef.current;
+        if (sid) { callBillingApi("/api/bot/session/end", { sessionId: sid, simulatedProfit: finalPnl }); sessionIdRef.current = null; }
+        return;
+      }
+    }
 
     // Session expiry
     if (Date.now() >= current.endTime) {
@@ -432,12 +500,13 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
 
   // ── Bot lifecycle ─────────────────────────────────────────────────────────
 
-  const launch = useCallback((strategy: Strategy, duration: DurationKey) => {
+  const launch = useCallback((strategy: Strategy, duration: DurationKey, riskConfig?: RiskConfig) => {
     stopLogTick();
     logIdxRef.current = 0;
     const now  = Date.now();
     const live = Boolean(xStatusRef.current?.connected);
     const estimatedHours = DURATION_MAP[duration] / 3_600_000;
+    const effectiveRisk = riskConfig ?? DEFAULT_RISK_CONFIG;
 
     setBot({
       id:            crypto.randomUUID(),
@@ -451,6 +520,7 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       openTrade:     null,
       trades:        0,
       liveExchange:  live,
+      riskConfig:    effectiveRisk,
     });
     appendLog(`Agent launched — Strategy: ${strategy}`, "system");
     appendLog(
@@ -460,6 +530,8 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       live ? "warn" : "system",
     );
     appendLog(`Session duration: ${duration}`, "system");
+    if (effectiveRisk.maxDailyLoss > 0) appendLog(`Risk limit: max daily loss $${effectiveRisk.maxDailyLoss}`, "system");
+    if (effectiveRisk.positionSizePct !== 100) appendLog(`Position size: ${effectiveRisk.positionSizePct}% of standard`, "system");
     startLogTick(strategy);
 
     // ── Bill the session start ───────────────────────────────────────────────
