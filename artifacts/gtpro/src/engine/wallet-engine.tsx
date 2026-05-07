@@ -148,6 +148,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isLoaded, isSignedIn, refreshWallet, refreshTransactions]);
 
+  // Instant refresh when admin adjusts balance (event fired by notification poller)
+  useEffect(() => {
+    const handler = () => {
+      refreshWallet();
+      refreshTransactions();
+    };
+    window.addEventListener("wallet:balance-updated", handler);
+    return () => window.removeEventListener("wallet:balance-updated", handler);
+  }, [refreshWallet, refreshTransactions]);
+
   const deposit = useCallback(async (amount: number, paymentMethod: PaymentMethod) => {
     const res = await authFetch("/api/billing/deposit", {
       method: "POST",

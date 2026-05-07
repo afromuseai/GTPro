@@ -120,6 +120,21 @@ export async function getOrCreateUser(clerkId: string, email: string) {
   // New user — grant $5 free welcome credits
   const WELCOME_CREDIT = 5;
 
+  // If a synthetic admin row already owns this email, claim it with the real clerkId
+  // so that admin edits and wallet reads always target the same row.
+  if (email) {
+    const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (byEmail && byEmail.clerkId !== clerkId) {
+      // Claim the row: upgrade synthetic clerkId → real clerkId
+      const [claimed] = await db
+        .update(users)
+        .set({ clerkId, updatedAt: new Date() })
+        .where(eq(users.id, byEmail.id))
+        .returning();
+      return claimed;
+    }
+  }
+
   await db
     .insert(users)
     .values({ clerkId, email, balance: WELCOME_CREDIT })

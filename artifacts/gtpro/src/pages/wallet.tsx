@@ -21,6 +21,8 @@ const TX_LABELS: Record<string, string> = {
   refund:        "Credit Refund",
   plan_purchase: "Plan Purchase",
   welcome_bonus: "Welcome Bonus",
+  admin_credit:  "Admin Credit",
+  admin_debit:   "Admin Debit",
 };
 
 const TX_COLORS: Record<string, string> = {
@@ -29,6 +31,8 @@ const TX_COLORS: Record<string, string> = {
   refund:        "bg-blue-400/10 text-blue-400",
   usage:         "bg-red-400/10 text-red-400",
   plan_purchase: "bg-amber-400/10 text-amber-400",
+  admin_credit:  "bg-violet-400/10 text-violet-400",
+  admin_debit:   "bg-orange-400/10 text-orange-400",
 };
 
 const CREDIT_PACKAGES = [

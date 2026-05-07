@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { getAuth, clerkClient } from "@clerk/express";
-import { db, adminUsers, users } from "@workspace/db";
+import { db, adminUsers, users, transactions, notifications } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 
 const router = Router();
@@ -294,6 +294,39 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
 
     const [updated] = await db.update(users).set(updateData).where(eq(users.id, platformId)).returning();
 
+    // Record a transaction + push notification whenever the admin changes balance
+    if (balance !== undefined) {
+      const prevBalance = parseFloat((existing.balance ?? 0).toString());
+      const newBalance  = parseFloat(balance.toString());
+      const delta       = newBalance - prevBalance;
+
+      if (delta !== 0) {
+        const isCredit = delta > 0;
+        const absAmt   = Math.abs(delta).toFixed(2);
+
+        await db.insert(transactions).values({
+          userId:      platformId,
+          type:        isCredit ? "admin_credit" : "admin_debit",
+          amount:      Math.abs(delta),
+          description: isCredit
+            ? `Admin credit adjustment: +$${absAmt}`
+            : `Admin debit adjustment: -$${absAmt}`,
+          status: "completed",
+        });
+
+        // Push a real-time notification so the user's wallet refreshes instantly
+        await db.insert(notifications).values({
+          userId:  platformId,
+          type:    "balance_updated",
+          title:   isCredit ? "Credits Added" : "Balance Adjusted",
+          message: isCredit
+            ? `An admin credited $${absAmt} to your account. New balance: $${newBalance.toFixed(2)}.`
+            : `An admin adjusted your balance by -$${absAmt}. New balance: $${newBalance.toFixed(2)}.`,
+          link:    "/wallet",
+        });
+      }
+    }
+
     req.log.info({ id: platformId, changes: updateData }, "Admin updated user");
     return res.json({
       id:            updated.id,
@@ -303,7 +336,7 @@ router.patch("/admin/users/:id", requireClerkAdmin, async (req, res) => {
       totalSpent:    parseFloat((updated.totalSpent ?? 0).toString()),
       billingPlan:   updated.billingPlan,
       note:          updated.note ?? null,
-      isAdmin:       true,
+      isAdmin:       false,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update user");

@@ -35,22 +35,24 @@ interface AppNotification {
 }
 
 const NOTIF_ICON: Record<string, React.ElementType> = {
-  login:   Info,
-  bot:     Bot,
-  deposit: Zap,
-  bonus:   Gift,
-  promo:   Bell,
-  ticket:  Shield,
-  warn:    AlertTriangle,
+  login:           Info,
+  bot:             Bot,
+  deposit:         Zap,
+  bonus:           Gift,
+  promo:           Bell,
+  ticket:          Shield,
+  warn:            AlertTriangle,
+  balance_updated: Zap,
 };
 const NOTIF_COLOR: Record<string, string> = {
-  login:   "text-blue-400 bg-blue-400/10",
-  bot:     "text-emerald-400 bg-emerald-400/10",
-  deposit: "text-primary bg-primary/10",
-  bonus:   "text-primary bg-primary/10",
-  promo:   "text-violet-400 bg-violet-400/10",
-  ticket:  "text-amber-400 bg-amber-400/10",
-  warn:    "text-red-400 bg-red-400/10",
+  login:           "text-blue-400 bg-blue-400/10",
+  bot:             "text-emerald-400 bg-emerald-400/10",
+  deposit:         "text-primary bg-primary/10",
+  bonus:           "text-primary bg-primary/10",
+  promo:           "text-violet-400 bg-violet-400/10",
+  ticket:          "text-amber-400 bg-amber-400/10",
+  warn:            "text-red-400 bg-red-400/10",
+  balance_updated: "text-emerald-400 bg-emerald-400/10",
 };
 
 // ── useNotifications hook ─────────────────────────────────────────────────────
@@ -75,12 +77,22 @@ function useNotifications() {
     });
   }, [getToken, BASE]);
 
+  const prevIdsRef = React.useRef<Set<string>>(new Set());
+
   const fetchNotifications = React.useCallback(async () => {
     try {
       const res = await apiFetch("/api/notifications");
       if (res.ok) {
         const data = await res.json() as AppNotification[];
+        // If a new balance_updated notification arrived, fire an instant wallet refresh
+        const hasNewBalanceUpdate = data.some(
+          n => n.type === "balance_updated" && !prevIdsRef.current.has(n.id)
+        );
+        prevIdsRef.current = new Set(data.map(n => n.id));
         setNotifications(data);
+        if (hasNewBalanceUpdate) {
+          window.dispatchEvent(new CustomEvent("wallet:balance-updated"));
+        }
       }
     } catch {}
   }, [apiFetch]);
@@ -106,10 +118,10 @@ function useNotifications() {
     } catch {}
   }, [apiFetch]);
 
-  // Poll every 30s
+  // Poll every 10s for faster balance-change detection
   React.useEffect(() => {
     fetchNotifications();
-    const id = setInterval(fetchNotifications, 30_000);
+    const id = setInterval(fetchNotifications, 10_000);
     return () => clearInterval(id);
   }, [fetchNotifications]);
 
